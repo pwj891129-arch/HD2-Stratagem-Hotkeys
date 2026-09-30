@@ -26,11 +26,12 @@ function archive(entries) {
   const header = 72 + types.length * 32;
   let offset = align(header + entries.length * 80);
   for (const entry of entries) { entry.offset = offset; offset = align(offset + entry.data.length); }
-  const bytes = Buffer.alloc(offset);
+  // HD2SDK reserves at least 256 bytes per resource for the native package reader.
+  const bytes = Buffer.alloc(Math.max(offset, 256 * entries.length));
   bytes.writeUInt32LE(0xf0000011, 0);
   bytes.writeUInt32LE(types.length, 4);
   bytes.writeUInt32LE(entries.length, 8);
-  bytes.writeBigUInt64LE(BigInt(offset), 32);
+  bytes.writeBigUInt64LE(BigInt(bytes.length), 32);
   types.forEach((type, index) => {
     const at = 72 + index * 32;
     bytes.writeBigUInt64LE(type, at + 8);

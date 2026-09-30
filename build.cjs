@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.2-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.3-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -33,7 +33,7 @@ const body = Buffer.from(source), payload = Buffer.alloc(body.length + 8);
 payload.writeUInt32LE(body.length, 0);
 payload.writeUInt32LE(2, 4);
 body.copy(payload, 8);
-const archive = Buffer.alloc(192 + Math.ceil(payload.length / 16) * 16);
+const archive = Buffer.alloc(Math.max(256, 192 + Math.ceil(payload.length / 16) * 16));
 archive.writeUInt32LE(0xf0000011, 0);
 archive.writeUInt32LE(1, 4);
 archive.writeUInt32LE(1, 8);
@@ -57,7 +57,7 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'Lua-only startup isolation build. Text radial selection and command shortcuts; no custom icon materials. Options are changed only in Arsenal, followed by Purge / Deploy and restart. Requires Bingus Shared Loader v18 / API 1.',
+  Description: 'Fixes undersized Arsenal option archives with HD2SDK-compatible minimum sizes. Text radial selection and command shortcuts; no custom icon materials. Options are changed only in Arsenal, followed by Purge / Deploy and restart. Requires Bingus Shared Loader v18 / API 1.',
   Options: []};
 const pack = require('./tools/package.cjs');
 const options = [

@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.2-test
+# HD2 Stratagem Hotkeys 0.1.3-test
 
 Hold Mouse Button 4, move toward a named sector, then release to enter its command.
 Release in the center to cancel. Aim and throw manually. The radial menu reads
@@ -6,24 +6,33 @@ the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
 
-## Startup Crash Isolation
+## Startup Package Fix
 
-Do not keep 0.1.1-test's icon resources deployed when testing this build.
-Two recent startup dumps recorded the same access violation (`0xc0000005`,
-`helldivers2.exe+0x5f2eb0`). Neither a fresh shared-loader log nor a stratagem
-addon log was created. The exact native call chain is not symbolized, so this
-does not establish the crash's root cause.
+Startup still crashed after removing icon materials in 0.1.2-test. The new
+`NxStorage` log names both mods' 224-byte option archives with error
+`0x89240007` (`E_DSTORAGE_END_OF_FILE`: a read exceeds the file size).
+The latest dump repeats `0xc0000005` at `helldivers2.exe+0x5f2eb0` before
+fresh shared-loader/addon logs. Icon materials were therefore not a sufficient
+explanation or fix.
 
-The newly added icon material archive is the leading suspect. This test release
-removes that archive and all custom texture/material calls. Every shipped game
-resource is Lua. The radial uses existing native text/triangle APIs to show
-names, slot numbers and readiness instead of icons. Cursor selection and command
-shortcuts remain enabled. This is a diagnostic stabilization build, not a live
-game confirmation that the crash is fixed. The first real overlay open also
-still needs validation.
+This build adds the minimum `256 * resource count` allocation used by
+[HD2SDK's package writer](https://github.com/RaidingForPants/HD2SDK-CommunityEdition/blob/3a488b42f10669790a5fff1f9d55b9c049cb734b/__init__.py#L827).
+All six option archives now contain 256 bytes, with trailing zero padding;
+Lua payload sizes and option values are unchanged. The writer also applies
+the rule to multiple-resource packages, and regression tests reject the old
+224-byte output. This fixes an evidenced package-size defect. Actual game
+startup still needs confirmation; no symbolized native stack is available.
 
-Remove/replace the previous test package in Arsenal, Purge, Deploy this build,
-and restart. Skipping Purge can leave the suspect `Icons` archive installed.
+When using Auto Reload, replace it with **0.3.27-test** as well: its old option
+archives have the same defect and also appear in the error log. Replacing only
+Stratagem Hotkeys leaves those failing reads in place.
+
+Every shipped resource remains Lua. The radial still shows names, slot numbers
+and readiness instead of icons. Cursor selection and command shortcuts are
+unchanged; actual overlay rendering still needs validation.
+
+Remove/replace both previous packages in Arsenal, Purge, Deploy the fixed
+versions, and restart. Do not keep old option or `Icons` archives deployed.
 New `BOOT ... platform-init`, `BOOT platform-ready` and `START` log messages
 locate initialization if the game reaches Lua startup. Installed game files
 are not changed by building or publishing this release.
@@ -59,7 +68,7 @@ bindings are read from the game. No HUD+, Helper preset or stratagem catalog is 
 3. Under default Arsenal priority, put the shared loader last. Purge / Deploy.
 4. Restart the game. Do not enable two copies of this addon.
 
-When also using HD2 AutoReload, update that addon to 0.3.24-test or newer.
+When also using HD2 AutoReload, update that addon to 0.3.27-test or newer.
 This prevents the command shortcuts from starting weapon-switch reload checks.
 The mods own separate Lua resources and preserve the existing update/shutdown chains.
 Neither boot nor content/input.config is replaced. Mod Bindings Menu is not a dependency.
@@ -93,8 +102,9 @@ Look for `OVERLAY opened rows=...` and `COMMAND kind=...`, then `command-complet
 ## Build
 
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
-Run `node tools/package.test.cjs` to verify Lua-only archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.2-test/*`; never package scratch captures.
+Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
+archives and option includes.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.3-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 
