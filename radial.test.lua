@@ -20,9 +20,9 @@ return function(equal, read_file, source)
         Window = {show_cursor = function() return show end, mouse_focus = function() return focus end,
             set_show_cursor = function(b) show = b end, set_mouse_focus = function(b) focus = b end},
         Gui = {resolution = function() return 1280, 720 end,
-            material = function(_, resource) return resource end,
+            material = function() error("custom material path must stay disabled") end,
             text_extents = function(_, text, _, size) return v(0, 0), v(#text * size * 0.5, size) end},
-        Material = {set_texture = function(_, slot) equal(slot, "3aa8b87e00000000", "native icon slot") end},
+        Material = {set_texture = function() error("native texture mutation must stay disabled") end},
         IdString64 = {from_hex = function(t) return t end},
     }
     for _, kind in ipairs({"triangle", "bitmap", "text"}) do
@@ -34,6 +34,13 @@ return function(equal, read_file, source)
         picture = "0000000100000001", name = "ITEM", status = index == 2 and "5s" or "READY"} end
     local radial = Radial.new(sr, channel, 1)
     equal(radial:open(inventory), true, "radial opens")
+    local labels, bitmaps = 0, 0
+    for _, shape in pairs(shapes) do
+        if shape[1] == "text" and shape[3] == "ITEM" then labels = labels + 1 end
+        if shape[1] == "bitmap" then bitmaps = bitmaps + 1 end
+    end
+    equal(labels, 4, "text fallback displays each equipped name")
+    equal(bitmaps, 0, "text fallback does not load icon materials")
     equal(show, true); equal(focus, false); equal(radial.selected, nil)
     x, y = 0.8, 0.5; equal(radial:draw(inventory), true); equal(radial.selected, 2)
     local before = next_id; radial:draw(inventory)
@@ -46,6 +53,17 @@ return function(equal, read_file, source)
     equal(destroyed, 0, "stale world is never dereferenced")
     worlds = {1, 2}; equal(radial:open(inventory), true); radial:dispose()
     equal(destroyed, 1, "only own live GUI destroyed")
+    equal(radial:open({rows = {inventory.rows[1]}}), true, "single sector opens")
+    local name_size
+    for _, shape in pairs(shapes) do
+        if shape[1] == "text" and shape[3] == "ITEM" then name_size = shape[5] end
+    end
+    equal(name_size ~= nil and name_size > 0, true, "single sector keeps positive font size")
+    radial:dispose()
+    sr.Application.can_get = function() return false end
+    local opened, why = radial:open(inventory)
+    equal(opened, false, "missing native font declines overlay")
+    equal(why, "overlay-font-unavailable")
 
     -- Actual addon sequencing with GUI/cursor and keyboard adapters; no OS input.
     local current, held, events, ready, token, focused, idle, menu = 0, {}, {}, true, "TOKEN", true, true, true

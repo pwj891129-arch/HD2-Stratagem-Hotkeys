@@ -19,8 +19,10 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
+log("BOOT 0.1.2-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
+log("BOOT platform-ready")
 local sr = rawget(_G, "stingray") or {}
 local app = sr.Application or {}
 if type(app.time_since_launch) ~= "function" then log("DISABLED monotonic clock unavailable"); return end
@@ -39,9 +41,9 @@ local config = {radial = option("radial", false), hotkeys = option("hotkeys", tr
 local reader, policy = Reader.new(channel), Policy.new(channel.key)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale)
-local state = {version = "0.1.1-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.2-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.1-test; Arsenal-only options; native radial; command only; no automatic throw")
+log("START 0.1.2-test; Arsenal-only options; text radial; command only; no automatic throw")
 local function note(reason)
     if reason ~= state.reason then log(reason); state.reason = reason end
 end

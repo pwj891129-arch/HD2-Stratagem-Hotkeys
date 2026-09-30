@@ -1,10 +1,32 @@
-# HD2 Stratagem Hotkeys 0.1.1-test
+# HD2 Stratagem Hotkeys 0.1.2-test
 
-Hold Mouse Button 4, move toward an icon, then release to enter its command.
+Hold Mouse Button 4, move toward a named sector, then release to enter its command.
 Release in the center to cancel. Aim and throw manually. The radial menu reads
-the local player's equipped stratagems, native icons, cooldowns and remaining uses.
+the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## Startup Crash Isolation
+
+Do not keep 0.1.1-test's icon resources deployed when testing this build.
+Two recent startup dumps recorded the same access violation (`0xc0000005`,
+`helldivers2.exe+0x5f2eb0`). Neither a fresh shared-loader log nor a stratagem
+addon log was created. The exact native call chain is not symbolized, so this
+does not establish the crash's root cause.
+
+The newly added icon material archive is the leading suspect. This test release
+removes that archive and all custom texture/material calls. Every shipped game
+resource is Lua. The radial uses existing native text/triangle APIs to show
+names, slot numbers and readiness instead of icons. Cursor selection and command
+shortcuts remain enabled. This is a diagnostic stabilization build, not a live
+game confirmation that the crash is fixed. The first real overlay open also
+still needs validation.
+
+Remove/replace the previous test package in Arsenal, Purge, Deploy this build,
+and restart. Skipping Purge can leave the suspect `Icons` archive installed.
+New `BOOT ... platform-init`, `BOOT platform-ready` and `START` log messages
+locate initialization if the game reaches Lua startup. Installed game files
+are not changed by building or publishing this release.
 
 ## Arsenal Options
 
@@ -47,10 +69,12 @@ Neither boot nor content/input.config is replaced. Mod Bindings Menu is not a de
 This is an experimental release, not a live gameplay certification.
 Offline tests cover reader bounds, identity checks, saved binding changes,
 sequence timing, cancellation, key release, callback chaining and input conflicts.
-Actual mission loadout order, host/client play, icon rendering, camera capture,
+Actual mission loadout order, host/client play, text rendering, camera capture,
 cursor restoration and ball preparation still need a live test. Names use the
 game's debug labels in this first radial version, not translated OCR text.
-The GUI has its own material names on the existing overlay world; it does not reuse HUD+ widgets.
+The GUI uses the game's existing debug font on an overlay world; it does not
+reuse HUD+ widgets or ship any binary GUI assets. Missing font/API data prevents
+the overlay from opening rather than invoking a missing resource.
 
 Supported binaries: Steam build 25480438 / EXE 1.8.46015.0, guarded by both file hashes.
 The first release supports a keyboard Hold binding for opening the list and Press
@@ -69,8 +93,9 @@ Look for `OVERLAY opened rows=...` and `COMMAND kind=...`, then `command-complet
 ## Build
 
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.1-test/*`; never package scratch captures.
-Building icon materials requires the supported local game's vanilla data bundles.
+Run `node tools/package.test.cjs` to verify Lua-only archives and option includes.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.2-test/*`; never package scratch captures.
+Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 
 AI-assisted implementation and documentation.

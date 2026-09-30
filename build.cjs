@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.1-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.2-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -57,11 +57,11 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'In-game radial selection and command shortcuts. Options are changed only in Arsenal, followed by Purge / Deploy and restart. Requires Bingus Shared Loader v18 / API 1.',
+  Description: 'Lua-only startup isolation build. Text radial selection and command shortcuts; no custom icon materials. Options are changed only in Arsenal, followed by Purge / Deploy and restart. Requires Bingus Shared Loader v18 / API 1.',
   Options: []};
 const pack = require('./tools/package.cjs');
 const options = [
-  ['radial', '원형 오버레이 ON/OFF', '체크하면 마우스 4번 버튼을 누르고 방향을 선택한 뒤 놓아 커맨드를 입력합니다. 조준/투척은 수동입니다.', ['Addon', 'Icons']],
+  ['radial', '원형 오버레이 ON/OFF', '체크하면 마우스 4번 버튼을 누르고 방향을 선택한 뒤 놓아 커맨드를 입력합니다. 시작 충돌 확인을 위해 아이콘 대신 이름/상태를 표시합니다. 조준/투척은 수동입니다.', ['Addon']],
   ['hotkeys', 'Stratagem Hotkeys', '목록 열기 키 + 숫자열 1~4 커맨드 입력 ON/OFF.', ['Addon']],
   ['shared', '공용/임무 스트라타젬 표시', '체크하면 게임에서 제공한 공용/임무 스트라타젬도 원형 메뉴에 포함합니다. 미체크시 장착 4개만 표시.', []],
   ['f6', '오버레이 키: F6', '체크하면 F6, 미체크하면 마우스 4번 버튼입니다. 다른 단축키와 겹치지 않게 설정하세요.', []],
@@ -73,10 +73,8 @@ for (const [index, [name, label, description, extra]] of options.entries()) {
   pack.write(path.join(stage, folder), index + 2, [pack.lua('mods/hd2_helper/stratagem_option_' + name, 'return true\n')]);
   manifest.Options.push({Name: label, Description: description, Include: [...extra, folder]});
 }
-const material = pack.vanillaMaterial();
-pack.write(path.join(stage, 'Icons'), 1, Array.from({length: 16}, (_, index) => ({
-  id: pack.hash64('mods/hd2_helper/radial_icon_' + (index + 1)), type: pack.hash64('material'), data: material,
-})));
+// Keep this isolation release Lua-only: icon material clones loaded before Lua startup.
+assert(!fs.existsSync(path.join(stage, 'Icons')), 'Stale icon resources must not ship');
 fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2));
 for (const file of ['README.md', 'THIRD_PARTY.txt']) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
 assert.equal(archive.readBigUInt64LE(104), hash64(resource));

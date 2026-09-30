@@ -61,19 +61,4 @@ function write(folder, number, entries) {
   assert.equal(bytes.readBigUInt64LE(32), BigInt(bytes.length));
   return bytes;
 }
-function vanillaMaterial() {
-  const reader = require('./archive.cjs');
-  const parts = reader.readBundlesIndex().get('9ba626afa44a3aa3'), opened = new Map();
-  try {
-    const file = path.join(reader.gameData, `bundles.${String(parts[0].bundleIndex).padStart(2, '0')}.nxa`);
-    opened.set(file, reader.readChunks(file));
-    const toc = opened.get(file).resource(parts[0].bundleOffset);
-    const entry = reader.entriesOf(toc, '9ba626afa44a3aa3', hash64('material')).find(item => item.id === 'ccf39a02b444fa01');
-    assert(entry && entry.size === 160, 'Native GUI material changed');
-    const bytes = reader.readPackageRange(opened, parts, entry.offset, entry.size);
-    assert.equal(bytes.readUInt32LE(0), 0x120);
-    assert(bytes.includes(Buffer.from('7eb8a83a', 'hex')), 'Native GUI texture slot changed');
-    return bytes;
-  } finally { for (const bundle of opened.values()) bundle.close(); }
-}
-module.exports = {hash64, archive, lua, write, vanillaMaterial};
+module.exports = {hash64, archive, lua, write};

@@ -38,7 +38,7 @@ end
 function Radial:dispose()
     self:close()
     if self.gui and self:world_live(self.world) then self.sr.World.destroy_gui(self.world, self.gui) end
-    self.gui, self.world, self.materials = nil, nil, nil
+    self.gui, self.world = nil, nil
 end
 function Radial:open(inventory)
     local sr, app, win = self.sr, self.sr.Application, self.sr.Window
@@ -47,8 +47,11 @@ function Radial:open(inventory)
         not win.set_show_cursor or not self.channel.cursor or not self.channel.center_cursor or
         not app.worlds or not app.main_world or not app.can_get or
         not sr.World.create_screen_gui or not sr.World.destroy_gui or not sr.Gui.resolution or
-        not sr.Gui.triangle or not sr.Gui.destroy_triangle or not sr.Gui.bitmap or
-        not sr.Gui.destroy_bitmap or not sr.Gui.destroy_text then return false, "overlay-api-unavailable" end
+        not sr.Gui.triangle or not sr.Gui.destroy_triangle or not sr.Gui.text or
+        not sr.Gui.text_extents or not sr.Gui.destroy_text then return false, "overlay-api-unavailable" end
+    if not app.can_get("font", "core/performance_hud/debug") then
+        return false, "overlay-font-unavailable"
+    end
     if self.mouse then self:restore(); if self.mouse then return false, "cursor-restore-pending" end end
     local main, target = app.main_world(), nil
     for _, world in pairs(app.worlds() or {}) do if world ~= main then target = world; break end end
@@ -57,7 +60,7 @@ function Radial:open(inventory)
         self:dispose()
         self.gui = sr.World.create_screen_gui(target, "scale", 1, 1)
         if not self.gui then return false, "overlay-gui-unavailable" end
-        self.world, self.materials = target, {}
+        self.world = target
     end
     local width, height = sr.Gui.resolution(self.gui)
     if not width or not height or width < 320 or height < 240 then return false, "overlay-resolution-unavailable" end
@@ -78,13 +81,14 @@ function Radial:shape(kind, ...)
     if id == nil then error("overlay-" .. kind .. "-failed") end
     self.ids[#self.ids + 1] = {kind, id}
 end
-function Radial:text(text, x, y, size, colour)
+function Radial:text(text, x, y, size, colour, maximum_width)
     local sr, font = self.sr, "core/performance_hud/debug"
     if not sr.Application.can_get("font", font) or not sr.Gui.text or not sr.Gui.text_extents then return end
     local lo, hi = sr.Gui.text_extents(self.gui, text, font, size)
     local width = hi.x - lo.x
-    if width > self.width - 40 then
-        size = size * (self.width - 40) / width
+    local limit = math.min(self.width - 40, maximum_width or self.width)
+    if width > limit then
+        size = size * limit / width
         lo, hi = sr.Gui.text_extents(self.gui, text, font, size)
         width = hi.x - lo.x
     end
@@ -102,7 +106,9 @@ function Radial:draw(inventory)
     if not nx then return false end
     self.selected = Radial.pick(nx, ny, w, h, #rows, scale)
     local mark = {tostring(self.selected), tostring(w), tostring(h)}
-    for _, row in ipairs(rows) do mark[#mark + 1] = row.kind .. ":" .. row.status end
+    for _, row in ipairs(rows) do
+        mark[#mark + 1] = row.kind .. ":" .. row.status .. ":" .. tostring(row.name)
+    end
     local signature = table.concat(mark, "|")
     if signature == self.signature then return true end
     self:clear()
@@ -122,22 +128,8 @@ function Radial:draw(inventory)
         end
         local x, y = cx + radius * math.cos(angle), cy + radius * math.sin(angle)
         local ink = row.ready and sr.Color(255, 255, 255, 240) or sr.Color(190, 125, 128, 130)
-        if row.picture and sr.Gui.material and sr.Material and sr.Material.set_texture and
-            sr.IdString64 and sr.IdString64.from_hex then
-            local resource = "mods/hd2_helper/radial_icon_" .. index
-            if not sr.Application.can_get("material", resource) then return false end
-            local material = self.materials[index]
-            if not material then
-                material = sr.Gui.material(self.gui, resource)
-                self.materials[index] = material
-            end
-            if material then
-                sr.Material.set_texture(material, sr.IdString64.from_hex("3aa8b87e00000000"),
-                    sr.IdString64.from_hex(row.picture))
-                local size = 62 * scale
-                self:shape("bitmap", resource, sr.Vector3(x - size / 2, y - size / 2, 11), sr.Vector2(size, size), ink)
-            end
-        end
+        local label_width = math.min(210 * scale, 2 * radius * math.sin(math.pi / math.max(2, #rows)) - 16 * scale)
+        self:text(row.name or ("STRATAGEM " .. row.kind), x, y - 7 * scale, 16 * scale, ink, label_width)
         self:text(tostring(index), x, y + 37 * scale, 18 * scale, ink)
         self:text(row.status, x, y - 50 * scale, 16 * scale, ink)
     end
