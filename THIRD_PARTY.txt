@@ -1,0 +1,14 @@
+No third-party runtime source is embedded in this addon.
+
+Required external dependency: Bingus Shared Loader v18 / API 1 by CowboyBingus.
+https://github.com/CowboyBingus/BingusSharedLoader
+
+Native layout research references (facts only; source is not copied):
+https://github.com/CowboyBingus/BetterStratagemBounce/blob/main/src/navigation_patch.lua
+https://github.com/CowboyBingus/ShipStationHotkeys/blob/main/src/galactic_menu_hotkey.lua
+https://github.com/CowboyBingus/ModBindingsMenu/blob/main/src/mod_bindings_menu.lua
+
+Loadout layout, direction actions, saved key encoding and command array offsets
+were independently checked against a local running game/module reference.
+Captured game binaries, settings and player identifiers are excluded from source and releases.
+Optional reference disassembly uses Capstone, installed separately into ignored scratch storage.
