@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.3-test lua-only; platform-init")
+log("BOOT 0.1.4-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -35,15 +35,16 @@ local function option(name, fallback)
     return loaded and value == true
 end
 local config = {radial = option("radial", false), hotkeys = option("hotkeys", true),
-    shared = option("shared", false), overlay_vk = option("f6", false) and 117 or 5,
+    shared = option("shared", false),
     scale = option("large", false) and 1.3 or 1,
     delay = option("slow", false) and 0.030 or 0.015}
 local reader, policy = Reader.new(channel), Policy.new(channel.key)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale)
-local state = {version = "0.1.3-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.4-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.3-test; Arsenal-only options; text radial; command only; no automatic throw")
+log("START 0.1.4-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
 local function note(reason)
     if reason ~= state.reason then log(reason); state.reason = reason end
 end
@@ -58,6 +59,7 @@ end
 local function stop()
     policy:cancel()
     state.pending = nil
+    state.radial_binding = nil
     local good, why = pcall(radial.close, radial)
     state.release_due = 0
     release_start()
@@ -91,16 +93,16 @@ local function tick()
     state.enter, state.escape = enter, escape
     if not state.bindings or now >= (state.binding_due or 0) then
         local bindings, why = reader:bindings()
+        if bindings and not same_binding(bindings, state.bindings) then
+            log("BINDING list-key vk=" .. bindings.start_vk)
+        end
         state.bindings, state.binding_due = bindings, now + 0.25
         if not bindings then note("WAIT " .. why) end
     end
     local binding = state.bindings
-    local overlay_conflict = binding and binding.start_vk == config.overlay_vk
-    if binding then
-        for _, vk in ipairs(binding.directions) do overlay_conflict = overlay_conflict or vk == config.overlay_vk end
-    end
     local modifier = binding and channel.down(binding.start_vk) or false
-    local overlay = config.radial and channel.down(config.overlay_vk) or false
+    -- An injected list-key hold finishes a command; it must not reopen the radial.
+    local overlay = config.radial and modifier and not state.owned_start or false
     local overlay_pressed, overlay_released = overlay and not state.overlay, not overlay and state.overlay
     state.overlay = overlay
     local numbers, pressed, count = {}, nil, 0
@@ -112,20 +114,34 @@ local function tick()
     local allowed = focused and binding and not state.chat and not escape and not enter and not fire and reader:idle()
     if not allowed then
         stop()
+        if overlay_pressed then note("OVERLAY blocked focus-chat-menu-or-fire") end
         state.blocking_inputs = focused and modifier
         return
     end
-    if overlay_pressed and overlay_conflict then note("SKIP overlay-binding-conflict") end
-    if overlay_pressed and not overlay_conflict and not policy.job and not state.pending and not state.owned_start and not state.radial_failed then
+    -- Number shortcuts take priority over the radial on the same list-key hold.
+    local shortcut = config.hotkeys and modifier and pressed and count == 1 and
+        not policy.job and not state.pending and not state.owned_start
+    if shortcut then
+        radial:close()
+        state.radial_binding = nil
+        state.pending = {slot = pressed, due = now + 0.05, expires = now + 0.35}
+    end
+    if overlay_pressed and not shortcut and not policy.job and not state.pending and not state.owned_start and not state.radial_failed then
+        log("OVERLAY list-key pressed vk=" .. binding.start_vk)
         local inventory, why = reader:radial(config.shared)
         if inventory then
             local opened; opened, why = radial:open(inventory)
-            if opened then state.radial_read_due = now + 0.05; log("OVERLAY opened rows=" .. #inventory.rows) end
+            if opened then
+                state.radial_binding, state.radial_read_due = binding, now + 0.05
+                log("OVERLAY opened rows=" .. #inventory.rows)
+            end
         end
         if why ~= "ready" and why ~= nil then note("OVERLAY " .. why) end
     end
     if radial.opened then
-        if now >= (state.radial_read_due or 0) then
+        if not same_binding(binding, state.radial_binding) then
+            stop(); note("OVERLAY cancelled binding-changed")
+        elseif now >= (state.radial_read_due or 0) then
             local current = reader:radial(config.shared)
             if not current or current.token ~= radial.inventory.token then
                 stop(); note("OVERLAY cancelled loadout-or-state-changed")
@@ -136,6 +152,7 @@ local function tick()
         elseif radial.opened and overlay_released then
             local row = radial.selected and radial.inventory.rows[radial.selected]
             radial:close()
+            state.radial_binding = nil
             if row and row.ready then
                 local request, why = reader:request_kind(row.kind, config.shared)
                 if request and clean(request) and same_binding(binding, request.bindings) then
@@ -146,8 +163,6 @@ local function tick()
                 else note("SKIP " .. (why or "direction-held-or-binding-changed")) end
             end
         end
-    elseif config.hotkeys and modifier and pressed and count == 1 and not policy.job and not state.pending and not state.owned_start then
-        state.pending = {slot = pressed, due = now + 0.05, expires = now + 0.35}
     end
     if state.pending and now >= state.pending.due then
         local pending = state.pending

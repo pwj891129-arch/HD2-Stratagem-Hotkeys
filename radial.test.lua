@@ -78,8 +78,13 @@ return function(equal, read_file, source)
         loadout = function() return {token = token} end,
         request = request, request_kind = request,
         radial = function() return {token = token, rows = {{kind = 1, ready = ready, status = "READY"}}}, "ready" end}
+    local opened_count = 0
     local mock_radial = {restore = function() end, dispose = function() end}
-    function mock_radial:open(value) self.inventory, self.opened = value, true; return true end
+    function mock_radial:open(value)
+        self.inventory, self.opened = value, true
+        opened_count = opened_count + 1
+        return true
+    end
     function mock_radial:draw() self.selected = 1; return true end
     function mock_radial:close() self.opened, self.selected, self.inventory = false, nil, nil end
     local env = setmetatable({fake = fake, fake_reader = fake_reader}, {__index = _G}); env._G = env
@@ -99,26 +104,63 @@ return function(equal, read_file, source)
     local init = assert(loadstring(glue)); setfenv(init, env); init()
     local function step(dt) current = current + dt; env.update() end
     local function finish() for i = 1, 20 do step(0.02) end end
-    step(0); held[5] = true; step(0.02)
+    step(0); held[5], held[117] = true, true; step(0.02)
+    equal(mock_radial.opened, nil, "retired mouse/F6 shortcuts do not open overlay")
+    held[5], held[117], held[164] = false, false, true; step(0.02)
+    equal(mock_radial.opened, true, "saved list key opens overlay")
     equal(#events, 0, "opening overlay never inputs command")
     equal(env.HD2StratagemHotkeys.blocking_inputs, true, "overlay blocks autoreload")
-    held[5] = false; step(0.02); finish()
+    held[164] = false; step(0.02); finish()
     equal(#events, 6, "release sends start plus two directions and releases start")
     equal(events[1][1], 164); equal(events[1][2], true)
     equal(events[6][1], 164); equal(events[6][2], false)
     equal(env.HD2StratagemHotkeys.blocking_inputs, false)
-    ready = false; held[5] = true; step(0.02); held[5] = false; step(0.02); finish()
+    equal(opened_count, 1, "synthetic list-key hold never reopens overlay")
+    ready = false; held[164] = true; step(0.02); held[164] = false; step(0.02); finish()
     equal(#events, 6, "unavailable sector sends nothing")
-    ready = true; held[5] = true; step(0.02); focused = false; step(0.02)
-    held[5] = false; focused = true; finish()
+    ready = true; held[164] = true; step(0.02); focused = false; step(0.02)
+    held[164] = false; focused = true; finish()
     equal(#events, 6, "focus loss cancels selection")
-    held[5] = true; step(0.02); token = "CHANGED"; step(0.06); held[5] = false; finish()
+    held[164] = true; step(0.02); token = "CHANGED"; step(0.06); held[164] = false; finish()
     equal(#events, 6, "loadout change cancels overlay")
-    menu = false; held[5] = true; step(0.02); held[5] = false; step(0.02); finish(); finish()
+    menu = false; held[164] = true; step(0.02); held[164] = false; step(0.02); finish(); finish()
     equal(#events, 8, "menu timeout releases owned start without directions")
-    menu = true; idle = false; held[5] = true; step(0.02); held[5] = false; finish()
+    menu = true; idle = false; held[164] = true; step(0.02); held[164] = false; finish()
     equal(#events, 8, "menu or chat blocks overlay")
     idle = true; held[164], held[49] = true, true; finish()
     equal(#events, 8, "Arsenal hotkey option off")
+    env.shutdown()
+
+    -- Both paths share the list key without firing two commands or hiding shortcuts.
+    env.update, env.shutdown, env.HD2StratagemHotkeys = nil, nil, nil
+    options.hotkeys = true
+    held, events, opened_count = {}, {}, 0
+    init()
+    step(0)
+    held[164], held[49] = true, true; step(0.02); finish()
+    equal(opened_count, 0, "same-frame number shortcut takes priority over overlay")
+    equal(#events, 4, "physical list key shortcut sends directions only")
+    held[164], held[49] = false, false; step(0.02)
+    held[164] = true; step(0.02)
+    equal(mock_radial.opened, true)
+    held[50] = true; step(0.02); finish()
+    equal(mock_radial.opened, false, "number shortcut closes an already open overlay")
+    equal(#events, 8, "one number command replaces radial selection")
+    held[164], held[50] = false, false; step(0.02); finish()
+    equal(#events, 8, "list-key release after number command sends no second command")
+    binding = {start_vk = 162, directions = {38, 39, 40, 37}}
+    step(0.3); held[162] = true; step(0.02)
+    equal(mock_radial.opened, true, "rebound list key opens overlay without fixed Alt")
+    held[162] = false; step(0.02); finish()
+    equal(#events, 14, "rebound list key release runs one radial command")
+    equal(events[9][1], 162, "rebound list key reacquired for command")
+    equal(events[14][1], 162); equal(events[14][2], false)
+    equal(opened_count, 2, "rebound synthetic hold also cannot reopen overlay")
+    held[162] = true; step(0.02)
+    binding = {start_vk = 164, directions = {38, 39, 40, 37}}
+    step(0.3)
+    equal(mock_radial.opened, false, "binding change while overlay open cancels selection")
+    held[162] = false; step(0.02); finish()
+    equal(#events, 14, "binding change never enters stale command")
     env.shutdown()
 end

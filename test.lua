@@ -78,11 +78,13 @@ put(ui + 17032 + 12, word(0)); put(ui + 17032 + 40, word(0))
 put(players + 132, word(1)); put(players + 136, word(1))
 local peer = "TESTPEER"
 put(players + 0x2c8, peer)
-put(history + 0x2d200, word(2)); put(history, "NOTLOCAL"); put(history + 0x788, word(4))
+put(history + 0x2d200, word(2)); put(history, "NOTLOCAL"); put(history + 0x7c0, word(4))
 local local_record = history + 0x1690
-put(local_record, peer); put(local_record + 0x788, word(4))
+local local_data = local_record + 0x38
+put(local_record, peer); put(local_data + 0x788, word(4))
+put(local_record + 0x788, word(0))
 for index, kind in ipairs({113, 101, 66, 1}) do
-    put(local_record + 0x188 + (index - 1) * 0x30, word(kind) .. word(3) .. string.rep("\0", 40))
+    put(local_data + 0x188 + (index - 1) * 0x30, word(kind) .. word(3) .. string.rep("\0", 40))
 end
 local reader = Reader.new(channel)
 local keys = assert(reader:bindings())
@@ -107,14 +109,15 @@ equal(reader:bindings(), nil, "non-hold start declined")
 binding(0, 164, 2)
 local loadout = assert(reader:loadout())
 equal(table.concat(loadout.slots, ","), "113,101,66,1", "local peer and slot order")
-put(local_record + 0x788, word(0))
+equal(reader:word(local_record + 0x788), 0, "legacy count offset is not the equipped count")
+put(local_data + 0x788, word(0))
 equal(reader:loadout(), nil, "empty ship loadout")
-put(local_record + 0x788, word(17))
+put(local_data + 0x788, word(17))
 equal(reader:loadout(), nil, "unexpected extra slots")
-put(local_record + 0x788, word(4))
-put(local_record + 0x188, word(1))
+put(local_data + 0x788, word(4))
+put(local_data + 0x188, word(1))
 equal(reader:loadout(), nil, "duplicate equipped slots")
-put(local_record + 0x188, word(113))
+put(local_data + 0x188, word(113))
 put(history, peer)
 equal(reader:loadout(), nil, "ambiguous history peer")
 put(history, "NOTLOCAL")
@@ -137,7 +140,7 @@ local snapshot = assert(reader:radial(false))
 equal(#snapshot.rows, 4, "radial equipped slots")
 equal(snapshot.rows[1].picture, "0000000100000001", "texture hash")
 equal(snapshot.rows[1].ready, true, "native ready state")
-local row1 = local_record + 0x188
+local row1 = local_data + 0x188
 put(row1 + 24, pointer(12500000))
 equal(assert(reader:radial(false)).rows[1].status, "3s", "cooldown rounds up")
 equal(reader:request_kind(113, false), nil, "cooldown blocks release request")
@@ -148,15 +151,15 @@ equal(assert(reader:radial(false)).rows[1].ready, false, "invalid timestamp fail
 put(row1 + 32, pointer(0))
 equal(assert(reader:request_kind(113, false)).kind, 113, "fresh command by kind")
 equal(reader:request_kind(149, false), nil, "unequipped kind blocked")
-local extra = local_record + 0x188 + 4 * 48
+local extra = local_data + 0x188 + 4 * 48
 put(extra, word(2) .. word(2) .. "\0\1" .. string.rep("\0", 38))
-put(local_record + 0x788, word(5))
+put(local_data + 0x788, word(5))
 equal(#assert(reader:radial(false)).rows, 4, "shared hidden")
 equal(#assert(reader:radial(true)).rows, 5, "shared shown")
 equal(assert(reader:loadout()).slots[4], 1, "shared does not shift equipped slots")
 put(extra + 9, "\2")
 equal(reader:loadout(), nil, "invalid shared flag blocked")
-put(local_record + 0x788, word(4))
+put(local_data + 0x788, word(4))
 
 -- Validate the parser against the local read-only capture when it is available.
 local capture = io.open("scratch/game-module.bin", "rb")
@@ -164,13 +167,23 @@ if capture then
     capture:close()
     local module = read_file("scratch/game-module.bin")
     local settings = read_file("scratch/stratagem-settings.bin")
+    local captured_players = read_file("scratch/players.bin")
+    local captured_loadouts = read_file("scratch/loadouts.bin")
     local base = tonumber(read_file("scratch/reference.json"):match('"Base"%s*:%s*(%d+)'))
     local settings_base = address(module, Reader.RVA.settings)
+    local players_base = address(module, Reader.RVA.players)
+    local loadouts_base = address(module, Reader.RVA.loadouts)
     local reference = {base = base}
     function reference:read(at, size)
         if at >= base and at + size <= base + #module then return module:sub(at - base + 1, at - base + size) end
         if at >= settings_base and at + size <= settings_base + #settings then
             return settings:sub(at - settings_base + 1, at - settings_base + size)
+        end
+        if at >= players_base and at + size <= players_base + #captured_players then
+            return captured_players:sub(at - players_base + 1, at - players_base + size)
+        end
+        if at >= loadouts_base and at + size <= loadouts_base + #captured_loadouts then
+            return captured_loadouts:sub(at - loadouts_base + 1, at - loadouts_base + size)
         end
     end
     local catalog = assert(Reader.new(reference):definitions())
@@ -179,6 +192,8 @@ if capture then
     local count = 0
     for _ in pairs(catalog) do count = count + 1 end
     equal(count, 149, "all native definitions")
+    equal(table.concat(assert(Reader.new(reference):loadout()).slots, ","), "1,121,101,113",
+        "real capture uses embedded loadout at peer record + 0x38")
     reference.read = function() return nil end
     equal(Reader.new(reference):definitions(), nil, "unreadable definitions")
 end

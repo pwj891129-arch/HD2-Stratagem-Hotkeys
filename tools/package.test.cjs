@@ -29,12 +29,14 @@ const large = pack.archive([pack.lua('test/large', 'x'.repeat(8192))]);
 checkMinimum(large);
 assert.equal(large.length, 192 + Math.ceil((8192 + 8) / 16) * 16);
 
-const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.3-test');
+const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.4-test');
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, 'manifest.json'), 'utf8'));
 const folders = [...new Set(manifest.Options.flatMap(option => option.Include))];
 const ids = new Set();
-assert.equal(manifest.Options.length, 6);
-assert.equal(folders.length, 7);
+assert.equal(manifest.Options.length, 5);
+assert.equal(folders.length, 6);
+assert(!folders.includes('Option_f6'));
+assert(!manifest.Options.some(option => option.Name.includes('F6')));
 assert(!fs.existsSync(path.join(stage, 'Icons')));
 for (const folder of folders) {
   const files = fs.readdirSync(path.join(stage, folder));
@@ -58,7 +60,8 @@ for (const folder of folders) {
     const source = archive.subarray(offset + 8, offset + size).toString('utf8');
     if (folder === 'Addon') {
       assert(source.startsWith('-- HD2-Addon: mods/hd2_helper/stratagem_hotkeys\n'));
-      assert(source.includes('BOOT 0.1.3-test'));
+      assert(source.includes('BOOT 0.1.4-test'));
+      assert(!source.includes('option("f6"'));
       assert(!source.includes('-- @'));
       assert(!/radial_icon_|set_texture|Gui\.material/.test(source));
     } else {
@@ -71,4 +74,4 @@ for (const folder of folders) {
     }
   }
 }
-console.log('PASS minimum-size regressions and 7 unique Lua-only archives; options are 256 bytes');
+console.log('PASS minimum-size regressions and 6 unique Lua-only archives; no F6 option');

@@ -3,7 +3,7 @@ Reader.__index = Reader
 Reader.RVA = { players = 0x3326468, ui = 0x347ce28, loadouts = 0x347ce50,
     input = 0x347cf18, settings = 0x348e8f8, definitions = 0x37cb600,
     clock = 0x3326348 }
-local DATA_SIZE, RECORD_SIZE = 80280, 400
+local DATA_SIZE, RECORD_SIZE, LOADOUT_DATA = 80280, 400, 0x38
 local ACTION = { [1] = 3, [2] = 2, [3] = 4, [4] = 1 }
 local function word(raw, at)
     if not raw or at < 0 or #raw < at + 4 then return nil end
@@ -154,11 +154,16 @@ function Reader:inventory(include_shared)
             selected = record
         end
     end
-    local total = selected and self:word(selected + 0x788)
-    if not total or total < 4 or total > 16 then return nil, "four-equipped-slots-unavailable" end
+    if not selected then return nil, "local-loadout-unavailable" end
+    -- Native consumers use record + 0x38 before the count/entry offsets.
+    local data = selected + LOADOUT_DATA
+    local total = self:word(data + 0x788)
+    if not total or total < 4 or total > 16 then
+        return nil, "equipped-slot-count-unavailable:" .. tostring(total)
+    end
     local slots, seen, rows, identities = {}, {}, {}, {}
     for index = 0, total - 1 do
-        local at = selected + 0x188 + index * 0x30
+        local at = data + 0x188 + index * 0x30
         local raw = self:read(at, 48)
         local kind = word(raw, 0)
         local shared = raw and raw:byte(10)
@@ -171,14 +176,14 @@ function Reader:inventory(include_shared)
                 uses = word(raw, 4)}
         end
     end
-    if #slots ~= 4 then return nil, "four-equipped-slots-unavailable" end
+    if #slots ~= 4 then return nil, "equipped-slot-count-mismatch:" .. #slots .. "/" .. total end
     -- Re-read identities after following the shared data; loading and respawn can replace them.
     if self:root("players") ~= players or self:root("loadouts") ~= history or
-        self:read(players + 0x2c8, 8) ~= peer or self:word(selected + 0x788) ~= total then
+        self:read(players + 0x2c8, 8) ~= peer or self:word(data + 0x788) ~= total then
         return nil, "loadout-changed"
     end
     for index = 0, total - 1 do
-        if self:word(selected + 0x188 + index * 0x30) ~= identities[index + 1] then
+        if self:word(data + 0x188 + index * 0x30) ~= identities[index + 1] then
             return nil, "loadout-changed"
         end
     end

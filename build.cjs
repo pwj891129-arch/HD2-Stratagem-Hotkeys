@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.3-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.4-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -57,14 +57,13 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'Fixes undersized Arsenal option archives with HD2SDK-compatible minimum sizes. Text radial selection and command shortcuts; no custom icon materials. Options are changed only in Arsenal, followed by Purge / Deploy and restart. Requires Bingus Shared Loader v18 / API 1.',
+  Description: 'Hold the game-configured Stratagem List key for the text radial; release to enter its command. Corrects the native loadout data offset and retains safe option archive minimum sizes. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
   Options: []};
 const pack = require('./tools/package.cjs');
 const options = [
-  ['radial', '원형 오버레이 ON/OFF', '체크하면 마우스 4번 버튼을 누르고 방향을 선택한 뒤 놓아 커맨드를 입력합니다. 시작 충돌 확인을 위해 아이콘 대신 이름/상태를 표시합니다. 조준/투척은 수동입니다.', ['Addon']],
+  ['radial', '원형 오버레이 ON/OFF', '게임에 설정된 스트라타젬 목록 열기 키를 누른 채 마우스로 방향을 고른 뒤 키를 놓으면 커맨드를 입력합니다. 아이콘 대신 이름/상태를 표시합니다. 조준/투척은 수동입니다.', ['Addon']],
   ['hotkeys', 'Stratagem Hotkeys', '목록 열기 키 + 숫자열 1~4 커맨드 입력 ON/OFF.', ['Addon']],
   ['shared', '공용/임무 스트라타젬 표시', '체크하면 게임에서 제공한 공용/임무 스트라타젬도 원형 메뉴에 포함합니다. 미체크시 장착 4개만 표시.', []],
-  ['f6', '오버레이 키: F6', '체크하면 F6, 미체크하면 마우스 4번 버튼입니다. 다른 단축키와 겹치지 않게 설정하세요.', []],
   ['large', '큰 원형 메뉴', '체크하면 130%, 미체크하면 100% 크기입니다.', []],
   ['slow', '커맨드 입력: 30ms', '체크하면 누르기/떼기 최소 30ms, 미체크하면 15ms. 각각 최소 1프레임입니다.', []],
 ];

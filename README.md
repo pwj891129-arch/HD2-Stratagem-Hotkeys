@@ -1,10 +1,38 @@
-# HD2 Stratagem Hotkeys 0.1.3-test
+# HD2 Stratagem Hotkeys 0.1.4-test
 
-Hold Mouse Button 4, move toward a named sector, then release to enter its command.
+Hold your game-configured Stratagem List key, move toward a named sector, then
+release the key to enter its command. F6 and Mouse Button 4 are no longer separate
+overlay bindings; no fixed Alt key is assumed.
 Release in the center to cancel. Aim and throw manually. The radial menu reads
 the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## List-Key Overlay And Loadout Fix
+
+The user confirmed normal startup with 0.1.3-test, but the addon log reported
+`OVERLAY four-equipped-slots-unavailable` during a mission. This was an inventory
+read failure, not evidence that F6/mouse input was ignored.
+
+Native consumers at `game.dll+0x66e658` and `+0x66e73d` add `0x38` to the matched
+peer record before reading the `+0x788` count and `+0x188` entry array. The old
+reader omitted this embedded-data offset. The existing read-only capture has
+zero at the old count offset and four entries at the native offset; the corrected
+reader now parses those actual captured entries in an offline regression test.
+Local-peer matching, exact four personal slots, shared-entry filtering and
+snapshot validation remain required. No speculative slot coordinates are used.
+
+The radial opens while the saved list key is held and confirms on release.
+To finish the command after physical release, the addon briefly reacquires the
+same list key, waits for the game menu and inputs the saved directions. That
+synthetic hold cannot reopen the radial. A configured List key + number shortcut
+takes priority, closing the radial if already open, without a second command on
+release. Changing bindings while selecting cancels the stale selection.
+
+Arsenal no longer has a separate F6 option. Enable `원형 오버레이 ON/OFF`, Purge /
+Deploy with the game closed and restart. `CONFIG`, `BINDING list-key vk=...`, and
+`OVERLAY list-key pressed` logs distinguish option, binding and inventory failures.
+Actual in-game overlay rendering and ball preparation still need confirmation.
 
 ## Startup Package Fix
 
@@ -17,11 +45,11 @@ explanation or fix.
 
 This build adds the minimum `256 * resource count` allocation used by
 [HD2SDK's package writer](https://github.com/RaidingForPants/HD2SDK-CommunityEdition/blob/3a488b42f10669790a5fff1f9d55b9c049cb734b/__init__.py#L827).
-All six option archives now contain 256 bytes, with trailing zero padding;
+All option archives now contain 256 bytes, with trailing zero padding;
 Lua payload sizes and option values are unchanged. The writer also applies
 the rule to multiple-resource packages, and regression tests reject the old
-224-byte output. This fixes an evidenced package-size defect. Actual game
-startup still needs confirmation; no symbolized native stack is available.
+224-byte output. The user confirmed that the fixed packages allow game startup.
+No symbolized native stack is available.
 
 When using Auto Reload, replace it with **0.3.27-test** as well: its old option
 archives have the same defect and also appear in the error log. Replacing only
@@ -43,16 +71,15 @@ All feature settings are changed in Arsenal, not an in-game MODS menu.
 After importing, review the checkboxes; Arsenal controls initial checkbox states.
 Close the game, change options, Purge / Deploy, and restart to apply them.
 
-- `원형 오버레이 ON/OFF`: enables the radial menu; default key is Mouse Button 4.
+- `원형 오버레이 ON/OFF`: enables the radial on the game's saved Stratagem List key.
 - `Stratagem Hotkeys`: separately enables List key + number-row 1 to 4.
 - `공용/임무 스트라타젬 표시`: includes shared/mission entries; otherwise equipped four only.
-- `오버레이 키: F6`: checked uses F6, unchecked uses Mouse Button 4.
 - `큰 원형 메뉴`: checked uses 130% size, unchecked uses 100%.
 - `커맨드 입력: 30ms`: checked uses 30 ms, unchecked uses 15 ms per down/up step.
 
 Neither Mod Options Menu nor Mod Bindings Menu is required. Unchecking both
 feature options omits this addon's runtime and GUI. No in-game settings are registered.
-Choose an overlay key not used by another game/mod action. Small viewports clamp
+The list key follows game settings. Small viewports clamp
 menu size to fit the screen, even when the larger option is selected.
 
 Hold your game's Stratagem List key, then press number-row 1, 2, 3 or 4.
@@ -104,7 +131,7 @@ Look for `OVERLAY opened rows=...` and `COMMAND kind=...`, then `command-complet
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
 Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.3-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.4-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 
