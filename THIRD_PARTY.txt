@@ -12,3 +12,12 @@ Loadout layout, direction actions, saved key encoding and command array offsets
 were independently checked against a local running game/module reference.
 Captured game binaries, settings and player identifiers are excluded from source and releases.
 Optional reference disassembly uses Capstone, installed separately into ignored scratch storage.
+
+Rendering API reference:
+https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Gui.html
+https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Window.html
+Native cooldown/icon field layout reference (facts only, no source/assets copied):
+https://www.nexusmods.com/helldivers2/mods/15298
+The build makes uniquely named copies of a 160-byte vanilla game GUI material;
+icon textures remain in the game and are not redistributed. No HUD+ 0.1.12 code,
+custom materials, images, fonts or GUI resources are shipped.

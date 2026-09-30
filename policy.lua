@@ -4,8 +4,12 @@ function Policy.new(sender)
     return setmetatable({sender = sender, delay = 0.015}, Policy)
 end
 function Policy:cancel()
-    if self.held and not self.sender(self.held, false) then return false, "key-release-failed" end
-    self.held, self.job = nil, nil
+    self.job = nil
+    if self.held and not self.sender(self.held, false) then
+        self.cancelled = true
+        return false, "key-release-failed"
+    end
+    self.held, self.cancelled = nil, nil
     return true
 end
 function Policy:start(request, now)
@@ -15,6 +19,10 @@ function Policy:start(request, now)
     return true
 end
 function Policy:step(now, allowed)
+    if self.cancelled then
+        local good = self:cancel()
+        return good and "cancelled" or "key-release-failed"
+    end
     local job = self.job
     if not job then return nil end
     if not allowed or now > job.expires then

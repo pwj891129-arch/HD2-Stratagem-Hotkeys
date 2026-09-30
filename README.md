@@ -1,4 +1,28 @@
-# HD2 Stratagem Hotkeys 0.1.0-test
+# HD2 Stratagem Hotkeys 0.1.1-test
+
+Hold Mouse Button 4, move toward an icon, then release to enter its command.
+Release in the center to cancel. Aim and throw manually. The radial menu reads
+the local player's equipped stratagems, native icons, cooldowns and remaining uses.
+Unavailable or unreadable entries cannot be selected. Availability and saved
+direction bindings are checked again immediately before command input.
+
+## Arsenal Options
+
+All feature settings are changed in Arsenal, not an in-game MODS menu.
+After importing, review the checkboxes; Arsenal controls initial checkbox states.
+Close the game, change options, Purge / Deploy, and restart to apply them.
+
+- `원형 오버레이 ON/OFF`: enables the radial menu; default key is Mouse Button 4.
+- `Stratagem Hotkeys`: separately enables List key + number-row 1 to 4.
+- `공용/임무 스트라타젬 표시`: includes shared/mission entries; otherwise equipped four only.
+- `오버레이 키: F6`: checked uses F6, unchecked uses Mouse Button 4.
+- `큰 원형 메뉴`: checked uses 130% size, unchecked uses 100%.
+- `커맨드 입력: 30ms`: checked uses 30 ms, unchecked uses 15 ms per down/up step.
+
+Neither Mod Options Menu nor Mod Bindings Menu is required. Unchecking both
+feature options omits this addon's runtime and GUI. No in-game settings are registered.
+Choose an overlay key not used by another game/mod action. Small viewports clamp
+menu size to fit the screen, even when the larger option is selected.
 
 Hold your game's Stratagem List key, then press number-row 1, 2, 3 or 4.
 The addon inputs the equipped slot's direction command. Aim and throw manually.
@@ -20,10 +44,13 @@ Neither boot nor content/input.config is replaced. Mod Bindings Menu is not a de
 
 ## Test Scope
 
-This is an initial experimental release, not a live gameplay certification.
+This is an experimental release, not a live gameplay certification.
 Offline tests cover reader bounds, identity checks, saved binding changes,
 sequence timing, cancellation, key release, callback chaining and input conflicts.
-Actual mission loadout order, host/client play and ball preparation still need a live test.
+Actual mission loadout order, host/client play, icon rendering, camera capture,
+cursor restoration and ball preparation still need a live test. Names use the
+game's debug labels in this first radial version, not translated OCR text.
+The GUI has its own material names on the existing overlay world; it does not reuse HUD+ widgets.
 
 Supported binaries: Steam build 25480438 / EXE 1.8.46015.0, guarded by both file hashes.
 The first release supports a keyboard Hold binding for opening the list and Press
@@ -36,13 +63,14 @@ The addon does not bypass cooldowns, ammunition, jammers or game restrictions.
 Game memory is read only; only normal keyboard input is generated. No mouse throw is generated.
 
 Log: `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/hd2_helper_stratagem_hotkeys.log`.
-Look for `COMMAND slot=... kind=...`, then `command-complete`.
+Look for `OVERLAY opened rows=...` and `COMMAND kind=...`, then `command-complete`.
 `SKIP` / `WAIT` record a refused input and its reason.
 
 ## Build
 
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.0-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.1-test/*`; never package scratch captures.
+Building icon materials requires the supported local game's vanilla data bundles.
 The optional tools read local game references for research without changing game state.
 
 AI-assisted implementation and documentation.

@@ -1,7 +1,8 @@
 local Reader = {}
 Reader.__index = Reader
 Reader.RVA = { players = 0x3326468, ui = 0x347ce28, loadouts = 0x347ce50,
-    input = 0x347cf18, settings = 0x348e8f8, definitions = 0x37cb600 }
+    input = 0x347cf18, settings = 0x348e8f8, definitions = 0x37cb600,
+    clock = 0x3326348 }
 local DATA_SIZE, RECORD_SIZE = 80280, 400
 local ACTION = { [1] = 3, [2] = 2, [3] = 4, [4] = 1 }
 local function word(raw, at)
@@ -20,6 +21,30 @@ function Reader.new(channel) return setmetatable({channel = channel}, Reader) en
 function Reader:read(at, size) return self.channel:read(at, size) end
 function Reader:word(at) return word(self:read(at, 4), 0) end
 function Reader:ptr(at) return pointer(self:read(at, 8), 0) end
+function Reader:integer64(at)
+    local raw = self:read(at, 8)
+    local lo, hi = word(raw, 0), word(raw, 4)
+    if not lo or not hi or hi >= 2097152 then return nil end
+    return lo + hi * 4294967296
+end
+function Reader:hash(at)
+    local raw = self:read(at, 8)
+    local lo, hi = word(raw, 0), word(raw, 4)
+    if not lo or not hi or (lo == 0 and hi == 0) then return nil end
+    return string.format("%08x%08x", hi, lo)
+end
+function Reader:name(at)
+    local address = self:ptr(at)
+    if not address then return nil end
+    local parts = {}
+    for offset = 0, 224, 32 do
+        local raw = self:read(address + offset, 32)
+        if not raw then return nil end
+        local finish = raw:find("\0", 1, true)
+        parts[#parts + 1] = finish and raw:sub(1, finish - 1) or raw
+        if finish then return table.concat(parts) end
+    end
+end
 function Reader:root(name) return self:ptr(self.channel.base + Reader.RVA[name]) end
 
 function Reader:definitions()
@@ -114,7 +139,7 @@ function Reader:menu_active()
     local active = owner and self:read(owner + 808 + 32 * (5 * 97), 1)
     return active ~= nil and active ~= "\0"
 end
-function Reader:loadout()
+function Reader:inventory(include_shared)
     local players, history = self:root("players"), self:root("loadouts")
     if not players or not history or self:word(players + 132) ~= 1 or
         self:word(players + 136) ~= 1 then return nil, "no-local-player" end
@@ -129,24 +154,77 @@ function Reader:loadout()
             selected = record
         end
     end
-    if not selected or self:word(selected + 0x788) ~= 4 then return nil, "four-equipped-slots-unavailable" end
-    local slots, seen = {}, {}
-    for index = 0, 3 do
-        local kind = self:word(selected + 0x188 + index * 0x30)
-        if not kind or kind == 0 or kind > 149 or seen[kind] then return nil, "invalid-equipped-slots" end
-        slots[index + 1], seen[kind] = kind, true
+    local total = selected and self:word(selected + 0x788)
+    if not total or total < 4 or total > 16 then return nil, "four-equipped-slots-unavailable" end
+    local slots, seen, rows, identities = {}, {}, {}, {}
+    for index = 0, total - 1 do
+        local at = selected + 0x188 + index * 0x30
+        local raw = self:read(at, 48)
+        local kind = word(raw, 0)
+        local shared = raw and raw:byte(10)
+        if not kind or kind == 0 or kind > 149 or seen[kind] or
+            (shared ~= 0 and shared ~= 1) then return nil, "invalid-equipped-slots" end
+        seen[kind], identities[#identities + 1] = true, kind
+        if shared == 0 then slots[#slots + 1] = kind end
+        if shared == 0 or include_shared then
+            rows[#rows + 1] = {kind = kind, address = at, shared = shared == 1,
+                uses = word(raw, 4)}
+        end
     end
+    if #slots ~= 4 then return nil, "four-equipped-slots-unavailable" end
     -- Re-read identities after following the shared data; loading and respawn can replace them.
     if self:root("players") ~= players or self:root("loadouts") ~= history or
-        self:read(players + 0x2c8, 8) ~= peer or self:word(selected + 0x788) ~= 4 then
+        self:read(players + 0x2c8, 8) ~= peer or self:word(selected + 0x788) ~= total then
         return nil, "loadout-changed"
     end
-    for index = 0, 3 do
-        if self:word(selected + 0x188 + index * 0x30) ~= slots[index + 1] then
+    for index = 0, total - 1 do
+        if self:word(selected + 0x188 + index * 0x30) ~= identities[index + 1] then
             return nil, "loadout-changed"
         end
     end
-    return {slots = slots, token = peer .. ":" .. table.concat(slots, ",")}, "ready"
+    return {slots = slots, rows = rows, token = peer .. ":" .. table.concat(identities, ",")}, "ready"
+end
+function Reader:loadout() return self:inventory(false) end
+function Reader:radial(include_shared)
+    local inventory, why = self:inventory(include_shared)
+    if not inventory then return nil, why end
+    local definitions; definitions, why = self:definitions()
+    if not definitions then return nil, why end
+    local clock = self:root("clock")
+    local now = clock and self:integer64(clock + 24)
+    if not now then return nil, "mission-clock-unavailable" end
+    for _, row in ipairs(inventory.rows) do
+        local definition = definitions[row.kind]
+        local call_due, reuse_due = self:integer64(row.address + 32), self:integer64(row.address + 24)
+        row.command = definition.command
+        definition.name = definition.name or self:name(definition.record + 16)
+        row.name = (definition.name or ("STRATAGEM " .. row.kind)):gsub("^.-%.%s*", "")
+        row.picture = self:hash(definition.record + 176)
+        row.ready = row.uses ~= nil and row.uses > 0 and call_due ~= nil and
+            reuse_due ~= nil and call_due <= now and reuse_due <= now
+        row.seconds = call_due and reuse_due and math.ceil(math.max(0, call_due - now, reuse_due - now) / 1000000)
+        row.status = row.uses == 0 and "EMPTY" or (row.seconds and row.seconds > 0 and
+            tostring(row.seconds) .. "s" or (row.ready and "READY" or "UNKNOWN"))
+    end
+    local current = self:inventory(include_shared)
+    if not current or current.token ~= inventory.token then return nil, "loadout-changed" end
+    return inventory, "ready"
+end
+function Reader:request_kind(kind, include_shared)
+    if not self:idle() then return nil, "menu-or-chat-open" end
+    local inventory, why = self:radial(include_shared)
+    if not inventory then return nil, why end
+    local bindings; bindings, why = self:bindings()
+    if not bindings then return nil, why end
+    for _, row in ipairs(inventory.rows) do
+        if row.kind == kind then
+            if not row.ready then return nil, "stratagem-unavailable" end
+            local keys = {}
+            for index, direction in ipairs(row.command) do keys[index] = bindings.directions[direction] end
+            return {token = inventory.token, kind = kind, keys = keys, bindings = bindings}, "ready"
+        end
+    end
+    return nil, "stratagem-not-equipped"
 end
 function Reader:request(slot)
     if not self:idle() then return nil, "menu-or-chat-open" end

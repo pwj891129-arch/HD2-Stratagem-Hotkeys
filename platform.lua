@@ -21,6 +21,13 @@ int HD2SH_ReadProcessMemory(void*, const void*, void*, size_t, size_t*) __asm__(
 void* HD2SH_CreateFileW(const unsigned short*, unsigned int, unsigned int, void*, unsigned int, unsigned int, void*) __asm__("CreateFileW");
 int HD2SH_ReadFile(void*, void*, unsigned int, unsigned int*, void*) __asm__("ReadFile");
 int HD2SH_CloseHandle(void*) __asm__("CloseHandle");
+typedef struct { int x, y; } HD2SH_POINT;
+typedef struct { int left, top, right, bottom; } HD2SH_RECT;
+int HD2SH_GetCursorPos(HD2SH_POINT*) __asm__("GetCursorPos");
+int HD2SH_ScreenToClient(void*, HD2SH_POINT*) __asm__("ScreenToClient");
+int HD2SH_ClientToScreen(void*, HD2SH_POINT*) __asm__("ClientToScreen");
+int HD2SH_GetClientRect(void*, HD2SH_RECT*) __asm__("GetClientRect");
+int HD2SH_SetCursorPos(int, int) __asm__("SetCursorPos");
 int HD2SH_BCryptOpenAlgorithmProvider(void**, const unsigned short*, const unsigned short*, unsigned int) __asm__("BCryptOpenAlgorithmProvider");
 int HD2SH_BCryptCloseAlgorithmProvider(void*, unsigned int) __asm__("BCryptCloseAlgorithmProvider");
 int HD2SH_BCryptCreateHash(void*, void**, void*, unsigned int, const void*, unsigned int, unsigned int) __asm__("BCryptCreateHash");
@@ -70,6 +77,12 @@ function Platform.create(ffi)
     local actual, input = ffi.new("size_t[1]"), ffi.new("HD2SH_INPUT[1]")
     assert(ffi.sizeof("HD2SH_INPUT") == 40, "INPUT layout mismatch")
     input[0].type = 1
+    local cursor, rect = ffi.new("HD2SH_POINT[1]"), ffi.new("HD2SH_RECT[1]")
+    local function window()
+        local handle = user.HD2SH_GetForegroundWindow()
+        user.HD2SH_GetWindowThreadProcessId(handle, pid)
+        if pid[0] == process_id then return handle end
+    end
     return {
         base = tonumber(ffi.cast("uintptr_t", game)),
         read = function(_, at, size)
@@ -85,6 +98,22 @@ function Platform.create(ffi)
             return pid[0] == process_id
         end,
         down = function(vk) return user.HD2SH_GetAsyncKeyState(vk) < 0 end,
+        cursor = function()
+            local handle = window()
+            if not handle or user.HD2SH_GetCursorPos(cursor) == 0 or
+                user.HD2SH_ScreenToClient(handle, cursor) == 0 or
+                user.HD2SH_GetClientRect(handle, rect) == 0 then return nil end
+            local width, height = rect[0].right, rect[0].bottom
+            if width < 100 or height < 100 then return nil end
+            return cursor[0].x / width, 1 - cursor[0].y / height
+        end,
+        center_cursor = function()
+            local handle = window()
+            if not handle or user.HD2SH_GetClientRect(handle, rect) == 0 then return false end
+            cursor[0].x, cursor[0].y = math.floor(rect[0].right / 2), math.floor(rect[0].bottom / 2)
+            if user.HD2SH_ClientToScreen(handle, cursor) == 0 then return false end
+            return user.HD2SH_SetCursorPos(cursor[0].x, cursor[0].y) ~= 0
+        end,
         key = function(vk, pressed)
             if vk <= 6 or vk > 254 then return false end
             local scan = user.HD2SH_MapVirtualKeyW(vk, 4)

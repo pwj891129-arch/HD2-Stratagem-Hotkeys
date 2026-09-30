@@ -81,7 +81,9 @@ put(players + 0x2c8, peer)
 put(history + 0x2d200, word(2)); put(history, "NOTLOCAL"); put(history + 0x788, word(4))
 local local_record = history + 0x1690
 put(local_record, peer); put(local_record + 0x788, word(4))
-for index, kind in ipairs({113, 101, 66, 1}) do put(local_record + 0x188 + (index - 1) * 0x30, word(kind)) end
+for index, kind in ipairs({113, 101, 66, 1}) do
+    put(local_record + 0x188 + (index - 1) * 0x30, word(kind) .. word(3) .. string.rep("\0", 40))
+end
 local reader = Reader.new(channel)
 local keys = assert(reader:bindings())
 equal(keys.start_vk, 164, "saved Alt")
@@ -107,7 +109,7 @@ local loadout = assert(reader:loadout())
 equal(table.concat(loadout.slots, ","), "113,101,66,1", "local peer and slot order")
 put(local_record + 0x788, word(0))
 equal(reader:loadout(), nil, "empty ship loadout")
-put(local_record + 0x788, word(5))
+put(local_record + 0x788, word(17))
 equal(reader:loadout(), nil, "unexpected extra slots")
 put(local_record + 0x788, word(4))
 put(local_record + 0x188, word(1))
@@ -124,6 +126,37 @@ equal(reader:menu_active(), true)
 put(owner + 808 + 32 * (5 * 97), "\0")
 equal(reader:menu_active(), false)
 put(owner + 808 + 32 * (5 * 97), "\1")
+
+local clock = 0x26000000
+root("clock", clock); put(clock + 24, pointer(10000000))
+local native_definitions = assert(reader:definitions())
+for index, kind in ipairs({113, 101, 66, 1}) do
+    put(native_definitions[kind].record + 176, word(index) .. word(1))
+end
+local snapshot = assert(reader:radial(false))
+equal(#snapshot.rows, 4, "radial equipped slots")
+equal(snapshot.rows[1].picture, "0000000100000001", "texture hash")
+equal(snapshot.rows[1].ready, true, "native ready state")
+local row1 = local_record + 0x188
+put(row1 + 24, pointer(12500000))
+equal(assert(reader:radial(false)).rows[1].status, "3s", "cooldown rounds up")
+equal(reader:request_kind(113, false), nil, "cooldown blocks release request")
+put(row1 + 24, pointer(0)); put(row1 + 4, word(0))
+equal(assert(reader:radial(false)).rows[1].status, "EMPTY", "zero uses blocks")
+put(row1 + 4, word(3)); put(row1 + 32, string.rep("\255", 8))
+equal(assert(reader:radial(false)).rows[1].ready, false, "invalid timestamp fails closed")
+put(row1 + 32, pointer(0))
+equal(assert(reader:request_kind(113, false)).kind, 113, "fresh command by kind")
+equal(reader:request_kind(149, false), nil, "unequipped kind blocked")
+local extra = local_record + 0x188 + 4 * 48
+put(extra, word(2) .. word(2) .. "\0\1" .. string.rep("\0", 38))
+put(local_record + 0x788, word(5))
+equal(#assert(reader:radial(false)).rows, 4, "shared hidden")
+equal(#assert(reader:radial(true)).rows, 5, "shared shown")
+equal(assert(reader:loadout()).slots[4], 1, "shared does not shift equipped slots")
+put(extra + 9, "\2")
+equal(reader:loadout(), nil, "invalid shared flag blocked")
+put(local_record + 0x788, word(4))
 
 -- Validate the parser against the local read-only capture when it is available.
 local capture = io.open("scratch/game-module.bin", "rb")
@@ -180,6 +213,7 @@ end)
 retry:start(request, 0); retry:step(0.05, true)
 equal(retry:step(0.07, false), "key-release-failed")
 equal(retry.held, 38, "failed release is retried")
+equal(retry.job, nil, "cancelled job cannot resume after release failure")
 equal(retry:step(0.08, false), "cancelled")
 equal(retry.held, nil)
 
@@ -210,6 +244,7 @@ local source = read_file("addon.lua")
 source = source:gsub('%-%- @PLATFORM@', function() return "return { create = function() return fake end }" end)
 source = source:gsub('%-%- @READER@', function() return "return { new = function() return fake_reader end }" end)
 source = source:gsub('%-%- @POLICY@', function() return read_file("policy.lua") end)
+source = source:gsub('%-%- @RADIAL@', function() return read_file("radial.lua") end)
 local init = assert(loadstring(source)); setfenv(init, env); init()
 local function step(dt) current = current + dt; return env.update("kept") end
 local a, b = step(0)
@@ -236,9 +271,16 @@ equal(events[6][2], false)
 equal(env.shutdown(), "shutdown", "shutdown chain")
 equal(env.HD2StratagemHotkeys.blocking_inputs, false)
 
+dofile("radial.test.lua")(equal, read_file, source)
+
 local ffi = require("ffi")
 ffi.cdef(Platform.declarations)
 equal(ffi.sizeof("HD2SH_INPUT"), 40)
+equal(ffi.sizeof("HD2SH_POINT"), 8); equal(ffi.sizeof("HD2SH_RECT"), 16)
+local user32 = ffi.load("user32")
+for _, name in ipairs({"GetCursorPos", "ScreenToClient", "ClientToScreen", "GetClientRect", "SetCursorPos"}) do
+    equal(user32["HD2SH_" .. name] ~= nil, true, "cursor symbol resolved without calling it")
+end
 local companion = io.open("../BingusAutoReload/native.lua", "rb")
 if companion then
     companion:close()

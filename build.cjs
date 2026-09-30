@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.0-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.1-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -24,7 +24,8 @@ function hash64(value) {
 }
 const read = file => fs.readFileSync(path.join(__dirname, file), 'utf8').replace(/\r\n/g, '\n');
 const source = read('addon.lua').replace('-- @PLATFORM@', () => read('platform.lua'))
-  .replace('-- @READER@', () => read('reader.lua')).replace('-- @POLICY@', () => read('policy.lua'));
+  .replace('-- @READER@', () => read('reader.lua')).replace('-- @POLICY@', () => read('policy.lua'))
+  .replace('-- @RADIAL@', () => read('radial.lua'));
 assert.equal(source.split('\n')[0], `-- HD2-Addon: ${resource}`);
 assert(!source.includes('-- @'));
 assert(!/WriteProcessMemory|VirtualProtect|ffi\.cast\([^\n]+\)\s*\(/.test(source));
@@ -56,8 +57,26 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'Equipped slot command shortcuts. Requires Bingus Shared Loader v18 / API 1.',
-  Options: [{Name: 'Stratagem Hotkeys', Description: 'Saved game bindings; manual aim and throw.', Include: ['Addon']}]};
+  Description: 'In-game radial selection and command shortcuts. Options are changed only in Arsenal, followed by Purge / Deploy and restart. Requires Bingus Shared Loader v18 / API 1.',
+  Options: []};
+const pack = require('./tools/package.cjs');
+const options = [
+  ['radial', '원형 오버레이 ON/OFF', '체크하면 마우스 4번 버튼을 누르고 방향을 선택한 뒤 놓아 커맨드를 입력합니다. 조준/투척은 수동입니다.', ['Addon', 'Icons']],
+  ['hotkeys', 'Stratagem Hotkeys', '목록 열기 키 + 숫자열 1~4 커맨드 입력 ON/OFF.', ['Addon']],
+  ['shared', '공용/임무 스트라타젬 표시', '체크하면 게임에서 제공한 공용/임무 스트라타젬도 원형 메뉴에 포함합니다. 미체크시 장착 4개만 표시.', []],
+  ['f6', '오버레이 키: F6', '체크하면 F6, 미체크하면 마우스 4번 버튼입니다. 다른 단축키와 겹치지 않게 설정하세요.', []],
+  ['large', '큰 원형 메뉴', '체크하면 130%, 미체크하면 100% 크기입니다.', []],
+  ['slow', '커맨드 입력: 30ms', '체크하면 누르기/떼기 최소 30ms, 미체크하면 15ms. 각각 최소 1프레임입니다.', []],
+];
+for (const [index, [name, label, description, extra]] of options.entries()) {
+  const folder = 'Option_' + name;
+  pack.write(path.join(stage, folder), index + 2, [pack.lua('mods/hd2_helper/stratagem_option_' + name, 'return true\n')]);
+  manifest.Options.push({Name: label, Description: description, Include: [...extra, folder]});
+}
+const material = pack.vanillaMaterial();
+pack.write(path.join(stage, 'Icons'), 1, Array.from({length: 16}, (_, index) => ({
+  id: pack.hash64('mods/hd2_helper/radial_icon_' + (index + 1)), type: pack.hash64('material'), data: material,
+})));
 fs.writeFileSync(path.join(stage, 'manifest.json'), JSON.stringify(manifest, null, 2));
 for (const file of ['README.md', 'THIRD_PARTY.txt']) fs.copyFileSync(path.join(__dirname, file), path.join(stage, file));
 assert.equal(archive.readBigUInt64LE(104), hash64(resource));
