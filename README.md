@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.6-test
+# HD2 Stratagem Hotkeys 0.1.7-test
 
 Hold your game-configured Stratagem List key, move toward a named sector, then
 release the key to enter its command. F6 and Mouse Button 4 are no longer separate
@@ -8,7 +8,46 @@ the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
 
-## Release Selection And Command Dispatch
+## Direction Input And Game Observation
+
+The user confirmed that holding Alt and manually pressing the configured arrow
+keys works, while this mod's automatic commands do not. Existing logs record
+saved VK values 37, 38, 39 and 40, not WASD. Windows input insertion succeeded,
+but that does not establish game receipt. The exact reason for the missing
+automatic commands is not yet confirmed.
+
+This compatibility test keeps the working list-key scan-code path and sends
+command directions using their explicit saved virtual-key values instead of
+scan-code-only events. Arrow keys keep the extended flag; Numpad and number-row
+bindings remain distinct. The sender follows the
+[Windows KEYBDINPUT contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-keybdinput).
+It does not switch to guessed WASD keys or retry an uncertain command.
+
+Each direction now waits for the game's corresponding native input action.
+The pinned game's direction consumers at `game.dll+0x597030` read group 5's
+action bytes at input owner + `0x3fc8`, spaced 32 bytes apart. The addon reads a
+bounded 160-byte snapshot through ReadProcessMemory, validates boolean values
+and rechecks that the owner still matches the saved bindings. No game memory
+is written and no native game input function is invoked.
+
+The input sequence observes a clear direction state before pressing, latches
+even a one-frame press, holds for the selected 15/30 ms minimum, releases, then
+waits for the native action to clear before the next key. Missing press/reset
+observations time out after 250 ms. Conflicting directions, unreadable state,
+input-owner replacement and existing cancellation guards stop the command and
+release owned keys. Each observed direction and the exact missing step are
+logged. `command-input-observed; game-result-unverified` means all direction
+actions were observed, not that a ball was prepared or a stratagem was called.
+
+624 LuaJIT checks pass without sending OS input, including mocked Windows
+INPUT fields, delayed/missing/one-frame action receipt, repeated directions,
+30 FPS sequences, release failure and input-owner replacement. Package checks
+retain six unique Lua-only archives with the required minimum sizes.
+Replace this mod with 0.1.7-test while the game is closed, then Purge / Deploy in
+Arsenal. Auto Reload 0.3.28-test can stay installed unchanged. Actual mission
+command acceptance still requires user testing; live game files were not edited.
+
+## Release Selection And Command Dispatch (0.1.6-test)
 
 The user confirmed that 0.1.5-test displays the interface, but reported that the
 game does not execute its commands. The log has 33 menu openings, only two
@@ -190,8 +229,10 @@ Game memory is read only; only normal keyboard input is generated. No mouse thro
 
 Log: `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/hd2_helper_stratagem_hotkeys.log`.
 Look for `OVERLAY selected kind=...`, `INPUT list-key-acquired` and `COMMAND kind=...`,
-then `command-sent; game-result-unverified`. This last message confirms only the
-OS input sequence, not the game's response.
+then `game-direction-observed step=...` for each direction. A missing action
+produces `game-direction-not-observed step=... direction=... vk=...` and stops.
+`command-input-observed; game-result-unverified` confirms native direction input
+observation only, not successful ball preparation or a completed call.
 `SKIP` / `WAIT` record a refused input and its reason.
 
 ## Build
@@ -199,7 +240,7 @@ OS input sequence, not the game's response.
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
 Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.6-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.7-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 

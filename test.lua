@@ -36,7 +36,7 @@ local function binding(action, vk, trigger)
     put(at, word(0x50000 + action) .. word(1) .. word(flags) .. word(vk + 49) .. word(trigger) .. word(0) .. word(0))
 end
 binding(0, 164, 2); binding(1, 37, 0); binding(2, 39, 0); binding(3, 38, 0); binding(4, 40, 0)
-put(owner + 808 + 32 * (5 * 97), "\1")
+put(owner + 808 + 32 * (5 * 97), "\1" .. string.rep("\0", 159))
 
 local settings = 0x25000000
 root("settings", settings)
@@ -93,6 +93,33 @@ equal(table.concat(keys.directions, ","), "38,39,40,37", "game direction enum to
 local synthetic_request = assert(Reader.new(channel):request(1))
 equal(synthetic_request.kind, 113)
 equal(table.concat(synthetic_request.keys, ","), "38,39,40,37", "native commands use saved mappings")
+equal(table.concat(synthetic_request.directions, ","), "1,2,3,4", "native direction identity accompanies each key")
+local action_base = owner + 808 + 32 * (5 * 97)
+local action_map = {3, 2, 4, 1}
+equal(assert(reader:command_state(keys)).start, true, "native list action observed")
+for direction = 1, 4 do
+    put(action_base + action_map[direction] * 32, "\1")
+    local state = assert(reader:command_state(keys))
+    for index = 1, 4 do equal(state.directions[index], index == direction, "direction action enum mapping") end
+    put(action_base + action_map[direction] * 32, "\0")
+end
+put(action_base + 32, "\2")
+equal(reader:command_state(keys), nil, "unexpected action value rejected")
+put(action_base + 32, "\0")
+root("input", owner + 0x1000)
+equal(reader:command_state(keys), nil, "replaced input owner rejects old bindings")
+root("input", owner)
+local original_read = channel.read
+channel.read = function(self, at, size)
+    local raw = original_read(self, at, size)
+    if at == action_base then root("input", owner + 0x1000) end
+    return raw
+end
+equal(reader:command_state(keys), nil, "input owner replacement during snapshot rejected")
+channel.read = original_read; root("input", owner)
+memory[action_base + 159] = nil
+equal(reader:command_state(keys), nil, "partial action snapshot rejected")
+put(action_base + 159, "\0")
 binding(3, 87, 0); binding(4, 83, 0); binding(1, 65, 0); binding(2, 68, 0)
 equal(table.concat(assert(reader:bindings()).directions, ","), "87,68,83,65", "rebound WASD")
 binding(3, 104, 0)
@@ -150,6 +177,7 @@ put(row1 + 4, word(3)); put(row1 + 32, string.rep("\255", 8))
 equal(assert(reader:radial(false)).rows[1].ready, false, "invalid timestamp fails closed")
 put(row1 + 32, pointer(0))
 equal(assert(reader:request_kind(113, false)).kind, 113, "fresh command by kind")
+equal(table.concat(assert(reader:request_kind(113, false)).directions, ","), "1,2,3,4", "radial also carries direction identity")
 equal(reader:request_kind(149, false), nil, "unequipped kind blocked")
 local extra = local_data + 0x188 + 4 * 48
 put(extra, word(2) .. word(2) .. "\0\1" .. string.rep("\0", 38))
@@ -198,9 +226,14 @@ if capture then
     equal(Reader.new(reference):definitions(), nil, "unreadable definitions")
 end
 
-local sent = {}
-local policy = Policy.new(function(vk, pressed) sent[#sent + 1] = {vk, pressed}; return true end)
-local request = {keys = {38, 38, 39}}
+local sent, policy_held = {}, {}
+local function observer()
+    return {start = true, directions = {policy_held[38] == true, policy_held[39] == true, false, false}}
+end
+local policy = Policy.new(function(vk, pressed)
+    sent[#sent + 1] = {vk, pressed}; policy_held[vk] = pressed; return true
+end, observer)
+local request = {keys = {38, 38, 39}, directions = {1, 1, 2}}
 equal(policy:start(request, 0), true)
 equal(policy:start(request, 0), false, "no queue while busy")
 policy:step(0.049, true)
@@ -224,7 +257,7 @@ local fails = 0
 local retry = Policy.new(function(_, pressed)
     if not pressed then fails = fails + 1; return fails > 1 end
     return true
-end)
+end, observer)
 retry:start(request, 0); retry:step(0.05, true)
 equal(retry:step(0.07, false), "key-release-failed")
 equal(retry.held, 38, "failed release is retried")
@@ -240,11 +273,15 @@ local fake = {base = 1,
     foreground = function() return focused end,
     down = function(vk) return held[vk] or false end,
     key = function(vk, down) events[#events + 1] = {vk, down}; held[vk] = down; return true end}
+fake.command_key = fake.key
 local fake_reader = {
     bindings = function() return binding_value, "ready" end,
     idle = function() return idle end, menu_active = function() return menu end,
+    command_state = function() return {start = menu, directions = {
+        held[38] == true, held[39] == true, held[40] == true, held[37] == true}} end,
     loadout = function() return {token = token} end,
-    request = function(_, slot) return {token = token, kind = slot, keys = {38, 39}, bindings = binding_value} end,
+    request = function(_, slot) return {token = token, kind = slot, keys = {38, 39},
+        directions = {1, 2}, bindings = binding_value} end,
 }
 local env = setmetatable({fake = fake, fake_reader = fake_reader}, {__index = _G})
 env._G = env
@@ -287,11 +324,48 @@ equal(env.shutdown(), "shutdown", "shutdown chain")
 equal(env.HD2StratagemHotkeys.blocking_inputs, false)
 
 dofile("radial.test.lua")(equal, read_file, source)
+dofile("policy.test.lua")(equal)
 
 local ffi = require("ffi")
 ffi.cdef(Platform.declarations)
 equal(ffi.sizeof("HD2SH_INPUT"), 40)
 equal(ffi.sizeof("HD2SH_POINT"), 8); equal(ffi.sizeof("HD2SH_RECT"), 16)
+local input, encoded, mappings = ffi.new("HD2SH_INPUT[1]"), {}, {
+    [37] = 0xe04b, [38] = 0xe048, [39] = 0xe04d, [40] = 0xe050,
+    [104] = 0x48, [56] = 0x09, [87] = 0x11, [164] = 0x38}
+input[0].type = 1
+local user = {HD2SH_MapVirtualKeyW = function(vk, mode) assert(mode == 4); return mappings[vk] or 0 end,
+    HD2SH_SendInput = function(count, data, size)
+        assert(count == 1 and size == 40 and data[0].type == 1)
+        local key = data[0].value.key
+        encoded[#encoded + 1] = {tonumber(key.vk), tonumber(key.scan), tonumber(key.flags)}
+        return 1
+    end}
+for _, vk in ipairs({37, 38, 39, 40}) do
+    equal(Platform.send_key(user, input, vk, true, true), true)
+    equal(encoded[#encoded][1], vk, "command uses saved virtual key")
+    equal(encoded[#encoded][2], mappings[vk] % 256)
+    equal(encoded[#encoded][3], 1, "arrows retain extended flag without scan-only flag")
+    equal(Platform.send_key(user, input, vk, false, true), true)
+    equal(encoded[#encoded][3], 3, "extended arrow key-up")
+end
+for _, vk in ipairs({104, 56, 87}) do
+    equal(Platform.send_key(user, input, vk, true, true), true)
+    equal(encoded[#encoded][1], vk, "Numpad, number row and rebound letter preserved")
+    equal(encoded[#encoded][3], 0, "non-extended binding is not sent as arrow")
+end
+equal(Platform.send_key(user, input, 164, true, false), true)
+equal(encoded[#encoded][1], 0, "list key clears command VK in shared INPUT buffer")
+equal(encoded[#encoded][2], 0x38); equal(encoded[#encoded][3], 8, "working list scan-code route retained")
+equal(Platform.send_key(user, input, 164, false, false), true)
+equal(encoded[#encoded][3], 10)
+local encoded_count = #encoded
+for _, vk in ipairs({0, 1, 6, 255, 38.5, "38", 120}) do
+    equal(Platform.send_key(user, input, vk, true, true), false, "invalid or unmapped key declined")
+end
+equal(#encoded, encoded_count, "declined keys send no input")
+user.HD2SH_SendInput = function() return 0 end
+equal(Platform.send_key(user, input, 38, true, true), false, "failed Windows insertion reported")
 local user32 = ffi.load("user32")
 for _, name in ipairs({"GetCursorPos", "ScreenToClient", "ClientToScreen", "GetClientRect", "SetCursorPos"}) do
     equal(user32["HD2SH_" .. name] ~= nil, true, "cursor symbol resolved without calling it")

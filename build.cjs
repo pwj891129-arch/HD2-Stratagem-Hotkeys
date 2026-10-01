@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.6-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.7-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -57,7 +57,7 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'Hold the game-configured Stratagem List key for the text radial; release to enter its command. Preserves selection on key-up, restores mouse capture, waits for the old list to close, and reacquires the list key before sending directions. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
+  Description: 'Hold the game-configured Stratagem List key for the text radial; release to enter its command. Directions use saved virtual keys and wait for native game input observation before advancing. Missing input cancels without blind retries. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
   Options: []};
 const pack = require('./tools/package.cjs');
 const options = [
@@ -65,7 +65,7 @@ const options = [
   ['hotkeys', 'Stratagem Hotkeys', '목록 열기 키 + 숫자열 1~4 커맨드 입력 ON/OFF.', ['Addon']],
   ['shared', '공용/임무 스트라타젬 표시', '체크하면 게임에서 제공한 공용/임무 스트라타젬도 원형 메뉴에 포함합니다. 미체크시 장착 4개만 표시.', []],
   ['large', '큰 원형 메뉴', '체크하면 130%, 미체크하면 100% 크기입니다.', []],
-  ['slow', '커맨드 입력: 30ms', '체크하면 누르기/떼기 최소 30ms, 미체크하면 15ms. 각각 최소 1프레임입니다.', []],
+  ['slow', '커맨드 입력: 30ms', '체크하면 누르기/떼기 최소 30ms, 미체크하면 15ms. 게임의 방향 입력 감지를 확인한 뒤 다음 키를 전송합니다.', []],
 ];
 for (const [index, [name, label, description, extra]] of options.entries()) {
   const folder = 'Option_' + name;

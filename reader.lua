@@ -5,6 +5,7 @@ Reader.RVA = { players = 0x3326468, ui = 0x347ce28, loadouts = 0x347ce50,
     clock = 0x3326348 }
 local DATA_SIZE, RECORD_SIZE, LOADOUT_DATA = 80280, 400, 0x38
 local ACTION = { [1] = 3, [2] = 2, [3] = 4, [4] = 1 }
+local ACTION_BASE = 808 + 32 * (5 * 97)
 local function word(raw, at)
     if not raw or at < 0 or #raw < at + 4 then return nil end
     local a, b, c, d = raw:byte(at + 1, at + 4)
@@ -136,8 +137,23 @@ function Reader:idle()
 end
 function Reader:menu_active()
     local owner = self:root("input")
-    local active = owner and self:read(owner + 808 + 32 * (5 * 97), 1)
+    local active = owner and self:read(owner + ACTION_BASE, 1)
     return active ~= nil and active ~= "\0"
+end
+function Reader:command_state(binding)
+    local owner = self:root("input")
+    if not binding or not owner or owner ~= binding.owner then return nil end
+    -- Native direction consumers read group 5's five action bytes, spaced 32 bytes apart.
+    local raw = self:read(owner + ACTION_BASE, 160)
+    if not raw or #raw ~= 160 or self:root("input") ~= owner then return nil end
+    local state = {directions = {}}
+    for action = 0, 4 do
+        local active = raw:byte(action * 32 + 1)
+        if active ~= 0 and active ~= 1 then return nil end
+    end
+    state.start = raw:byte(1) == 1
+    for direction = 1, 4 do state.directions[direction] = raw:byte(ACTION[direction] * 32 + 1) == 1 end
+    return state
 end
 function Reader:inventory(include_shared)
     local players, history = self:root("players"), self:root("loadouts")
@@ -226,7 +242,7 @@ function Reader:request_kind(kind, include_shared)
             if not row.ready then return nil, "stratagem-unavailable" end
             local keys = {}
             for index, direction in ipairs(row.command) do keys[index] = bindings.directions[direction] end
-            return {token = inventory.token, kind = kind, keys = keys, bindings = bindings}, "ready"
+            return {token = inventory.token, kind = kind, keys = keys, directions = row.command, bindings = bindings}, "ready"
         end
     end
     return nil, "stratagem-not-equipped"
@@ -244,6 +260,6 @@ function Reader:request(slot)
     if not definition then return nil, "slot-definition-unavailable" end
     local keys = {}
     for index, direction in ipairs(definition.command) do keys[index] = bindings.directions[direction] end
-    return {token = loadout.token, kind = kind, keys = keys, bindings = bindings}, "ready"
+    return {token = loadout.token, kind = kind, keys = keys, directions = definition.command, bindings = bindings}, "ready"
 end
 return Reader

@@ -36,6 +36,16 @@ int HD2SH_BCryptFinishHash(void*, void*, unsigned int, unsigned int) __asm__("BC
 int HD2SH_BCryptDestroyHash(void*) __asm__("BCryptDestroyHash");
 ]]
 
+function Platform.send_key(user, input, vk, pressed, virtual)
+    if type(vk) ~= "number" or vk ~= math.floor(vk) or vk <= 6 or vk > 254 then return false end
+    local scan = user.HD2SH_MapVirtualKeyW(vk, 4)
+    if scan == 0 then return false end
+    input[0].value.key.vk = virtual and vk or 0
+    input[0].value.key.scan = scan % 256
+    input[0].value.key.flags = (scan >= 256 and 1 or 0) + (virtual and 0 or 8) + (pressed and 0 or 2)
+    return user.HD2SH_SendInput(1, input, 40) == 1
+end
+
 function Platform.create(ffi)
     assert(ffi.abi("64bit"), "Windows x64 required")
     ffi.cdef(Platform.declarations)
@@ -115,12 +125,10 @@ function Platform.create(ffi)
             return user.HD2SH_SetCursorPos(cursor[0].x, cursor[0].y) ~= 0
         end,
         key = function(vk, pressed)
-            if vk <= 6 or vk > 254 then return false end
-            local scan = user.HD2SH_MapVirtualKeyW(vk, 4)
-            if scan == 0 then return false end
-            input[0].value.key.scan = scan % 256
-            input[0].value.key.flags = (scan >= 256 and 9 or 8) + (pressed and 0 or 2)
-            return user.HD2SH_SendInput(1, input, 40) == 1
+            return Platform.send_key(user, input, vk, pressed, false)
+        end,
+        command_key = function(vk, pressed)
+            return Platform.send_key(user, input, vk, pressed, true)
         end,
     }
 end

@@ -29,7 +29,7 @@ const large = pack.archive([pack.lua('test/large', 'x'.repeat(8192))]);
 checkMinimum(large);
 assert.equal(large.length, 192 + Math.ceil((8192 + 8) / 16) * 16);
 
-const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.6-test');
+const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.7-test');
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, 'manifest.json'), 'utf8'));
 const folders = [...new Set(manifest.Options.flatMap(option => option.Include))];
 const ids = new Set();
@@ -60,9 +60,13 @@ for (const folder of folders) {
     const source = archive.subarray(offset + 8, offset + size).toString('utf8');
     if (folder === 'Addon') {
       assert(source.startsWith('-- HD2-Addon: mods/hd2_helper/stratagem_hotkeys\n'));
-      assert(source.includes('BOOT 0.1.6-test'));
+      assert(source.includes('BOOT 0.1.7-test'));
       assert(source.includes('INPUT waiting-list-close'));
-      assert(source.includes('command-sent; game-result-unverified'));
+      assert(source.includes('command-input-observed; game-result-unverified'));
+      assert(!source.includes('command-sent; game-result-unverified'));
+      assert(source.includes('Policy.new(channel.command_key'));
+      assert(source.includes('reader:command_state(binding)'));
+      assert(source.includes('game-direction-not-observed step='));
       assert(source.includes('self.sr.Gui.resolution()'));
       assert(!/Gui\.resolution\(\s*[^)\s]/.test(source), 'Gui.resolution takes no GUI object');
       assert(source.includes('OVERLAY stage='));

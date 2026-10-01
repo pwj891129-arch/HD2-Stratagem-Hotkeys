@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.6-test lua-only; platform-init")
+log("BOOT 0.1.7-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -38,12 +38,14 @@ local config = {radial = option("radial", false), hotkeys = option("hotkeys", tr
     shared = option("shared", false),
     scale = option("large", false) and 1.3 or 1,
     delay = option("slow", false) and 0.030 or 0.015}
-local reader, policy = Reader.new(channel), Policy.new(channel.key)
+local reader = Reader.new(channel)
+local policy = Policy.new(channel.command_key, function(binding) return reader:command_state(binding) end)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale, log)
-local state = {version = "0.1.6-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.7-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.6-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("START 0.1.7-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("INPUT direction-mode=virtual-key; game-action-observation=required")
 log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
 local function note(reason)
     if reason ~= state.reason then log(reason); state.reason = reason end
@@ -67,7 +69,7 @@ local function stop()
     if not good then error(why) end
 end
 local function same_binding(a, b)
-    if not a or not b or a.start_vk ~= b.start_vk then return false end
+    if not a or not b or a.start_vk ~= b.start_vk or a.owner ~= b.owner then return false end
     for direction = 1, 4 do if a.directions[direction] ~= b.directions[direction] then return false end end
     return true
 end
@@ -234,9 +236,10 @@ local function tick()
         local request = policy.job.request
         local same = (modifier or state.owned_start ~= nil) and loadout and loadout.token == request.token and
             same_binding(binding, request.bindings) and reader:menu_active()
-        local result = policy:step(now, same)
+        local result, observed = policy:step(now, same)
+        if observed then log(observed) end
         if result then
-            log(result == "command-complete" and "command-sent; game-result-unverified" or result)
+            log(result == "command-complete" and "command-input-observed; game-result-unverified" or result)
             if not policy.job then state.release_due = now + 0.03 end
         end
     end

@@ -122,18 +122,22 @@ return function(equal, read_file, source)
 
     -- Actual addon sequencing with GUI/cursor and keyboard adapters; no OS input.
     local current, held, events, ready, token, focused, idle, menu = 0, {}, {}, true, "TOKEN", true, true, true
-    local menu_override, hover = nil, 1
+    local menu_override, hover, acknowledge = nil, 1, true
     local options = {radial = true}
     local binding = {start_vk = 164, directions = {38, 39, 40, 37}}
     local fake = {base = 1, foreground = function() return focused end,
         down = function(vk) return held[vk] or false end,
-        key = function(vk, down) events[#events + 1] = {vk, down}; held[vk] = down; return true end}
-    local request = function() if ready then return {token = token, kind = 1, keys = {38, 39}, bindings = binding} end end
+        key = function(vk, down) events[#events + 1] = {vk, down, "list"}; held[vk] = down; return true end,
+        command_key = function(vk, down) events[#events + 1] = {vk, down, "command"}; held[vk] = down; return true end}
+    local request = function() if ready then return {token = token, kind = 1, keys = {38, 39},
+        directions = {1, 2}, bindings = binding} end end
     local fake_reader = {bindings = function() return binding, "ready" end,
         idle = function() return idle end, menu_active = function()
             if menu_override ~= nil then return menu_override end
             return menu and held[binding.start_vk] == true
         end,
+        command_state = function() return {start = menu and held[binding.start_vk] == true,
+            directions = {acknowledge and held[38] == true, acknowledge and held[39] == true, false, false}} end,
         loadout = function() return {token = token} end,
         request = request, request_kind = request,
         radial = function() return {token = token, rows = {{kind = 1, ready = ready, status = "READY"}}}, "ready" end}
@@ -176,6 +180,8 @@ return function(equal, read_file, source)
     held[164] = false; step(0.02); finish()
     equal(#events, 6, "release sends start plus two directions and releases start")
     equal(events[1][1], 164); equal(events[1][2], true)
+    equal(events[1][3], "list", "Alt uses unchanged list input route")
+    equal(events[2][3], "command", "direction uses distinct command input route")
     equal(events[6][1], 164); equal(events[6][2], false)
     equal(env.HD2StratagemHotkeys.blocking_inputs, false)
     equal(opened_count, 1, "synthetic list-key hold never reopens overlay")
@@ -253,7 +259,7 @@ return function(equal, read_file, source)
     local function restart()
         env.update, env.shutdown, env.HD2StratagemHotkeys = nil, nil, nil
         held, events, opened_count, messages = {}, {}, 0, {}
-        menu_override, hover, focused, idle, menu, ready = nil, 1, true, true, true, true
+        menu_override, hover, focused, idle, menu, ready, acknowledge = nil, 1, true, true, true, true, true
         binding = {start_vk = 164, directions = {38, 39, 40, 37}}
         init(); step(0)
     end
@@ -339,5 +345,36 @@ return function(equal, read_file, source)
     equal(messages[#messages], "OVERLAY cancelled fire\n", "fire cancellation after opening is diagnosed")
     held[1], held[164] = false, false; step(0.02); finish()
     equal(#events, 0, "release after a fire-cancelled menu never inputs a command")
+    env.shutdown()
+
+    restart()
+    acknowledge = false
+    held[164] = true; step(0.02); held[164] = false; step(0.02)
+    finish(); finish()
+    equal(#events, 4, "missing game direction stops after first down/up and releases list")
+    equal(events[2][1], 38); equal(events[2][2], true)
+    equal(events[3][1], 38); equal(events[3][2], false)
+    equal(events[4][1], 164); equal(events[4][2], false)
+    equal(table.concat(messages):find("game-direction-not-observed step=1 direction=1 vk=38", 1, true) ~= nil,
+        true, "missing game receipt identifies exact failed step")
+    equal(table.concat(messages):find("command-input-observed", 1, true), nil, "Windows insertion alone is not completion")
+    equal(env.HD2StratagemHotkeys.blocking_inputs, false)
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02); held[164] = false; step(0.02); finish()
+    equal(table.concat(messages):find("game-direction-observed step=1 direction=1 vk=38", 1, true) ~= nil, true)
+    equal(table.concat(messages):find("game-direction-observed step=2 direction=2 vk=39", 1, true) ~= nil, true)
+    equal(table.concat(messages):find("command-input-observed; game-result-unverified", 1, true) ~= nil, true,
+        "game input observation remains distinct from successful stratagem use")
+    env.shutdown()
+
+    restart()
+    binding.owner = 100
+    held[164] = true; step(0.02); held[164], menu_override = false, true; step(0.02)
+    binding = {start_vk = 164, directions = {38, 39, 40, 37}, owner = 200}
+    step(0.3)
+    equal(#events, 0, "same keys with replaced input owner cancel queued command")
+    equal(env.HD2StratagemHotkeys.pending, nil)
     env.shutdown()
 end
