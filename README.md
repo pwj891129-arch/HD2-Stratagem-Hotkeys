@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.9-test
+# HD2 Stratagem Hotkeys 0.1.10-test
 
 Hold your game-configured Stratagem List key, move toward an icon sector, then
 release the key to enter its command. F6 and Mouse Button 4 are no longer separate
@@ -8,38 +8,46 @@ the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
 
-## Native Stratagem Icons (0.1.9-test)
+## Native Icon Rendering Fix (0.1.10-test)
 
-The radial now displays the game's stratagem icons, with personal slot numbers
-above them and smaller names/readiness below. Unavailable entries are dimmed.
-One-to-sixteen item layouts clamp square icon sizes to avoid overlap, including
-small screens and the 130% option. Missing images retain the readable name layout.
+The user's 0.1.9-test log showed the menu opening with `OVERLAY icons=0/10`.
+Its generic image template, `ccf39a02b444fa01`, is actually the hash of
+`core/performance_hud/debug`: a debug font material with a different shader
+from the native stratagem icon materials. The previous texture-binding path
+was incorrect. Its total-only log did not identify which check rejected each
+icon, so it does not establish one specific runtime failure stage.
 
-Icons use the texture hash read from each native stratagem definition. The addon
-checks that both the native GUI template and the texture are already available
-before binding them. The template is `ccf39a02b444fa01`; its `DiffuseMap` slot
-was checked in the installed game's compiled material. No icons, shaders,
-materials, font files or GUI binaries are included in this Lua-only release.
-The addon does not load a custom image package during startup.
+Definition +176 names a per-stratagem native material that already binds the
+corresponding same-hash texture and correct image shader. This version draws
+that already-available material directly with
+[Gui.bitmap](https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Gui.html).
+It does not require a generic template, separately query texture availability,
+replace textures, or mutate GUI materials. Icons share the owned radial GUI
+with sector backgrounds and labels, using explicit draw layers. No extra icon
+GUIs are allocated, and no game/HUD+ material is modified.
 
-Each icon has a separate owned screen GUI and GUI-local material instance.
-This prevents binding one icon from replacing the others or altering HUD+
-materials. Hover redraws reuse surfaces and unchanged bindings. Closing releases
-the icon surfaces; disappearing resources also retire their surfaces so recovery
-gets fresh bindings. World replacement/shutdown discards or releases owned
-surfaces without dereferencing a stale world. Native APIs follow the
-[Gui bitmap/material contract](https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Gui.html)
-and [texture-slot contract](https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Material.html).
-`OVERLAY icons=4/4` logs the number of images drawn; partial counts indicate
-resource/API fallback rather than confirmation of game rendering.
+Personal numbers remain above the square images; names and readiness are below.
+Unavailable entries are dimmed. One-to-sixteen item layouts clamp icon sizes
+on small screens and with the 130% option. Missing resources/API failures retain
+the name layout and log `OVERLAY icon-fallback kind=... material=... reason=...`.
+Logs distinguish invalid references, unavailable APIs, material ID/query
+failures, unavailable native materials and bitmap failures. Unchanged fallback
+reasons are not repeated on every hover redraw.
 
-3,524 LuaJIT checks pass without sending OS input. These include independent
-textures, icon changes/unloading/recovery, GUI/material/binding/draw failures,
-retained redraws, shutdown and stale-world cleanup, and non-overlapping image
-bounds for 1-16 entries at 320x240, 1280x720 and 3840x2160. The actual native
-rendering and game command acceptance still require a live user test. Replace
-this mod with 0.1.9-test while the game is closed, then Purge / Deploy in Arsenal.
-Auto Reload 0.3.28-test stays unchanged; installed game files were not changed.
+`OVERLAY icons=4/4` means four bitmap calls returned shape IDs, not that native
+rendering or a game command succeeded. 3,591 LuaJIT checks pass without OS input.
+Tests cover distinct native materials with no texture setters, resource changes,
+unloading/recovery, API/ID/query/draw failures, retained redraws, shutdown,
+stale worlds and non-overlapping image bounds for 1-16 entries at 320x240,
+1280x720 and 3840x2160. A separate read-only native archive regression verifies
+130 nonzero definitions / 110 distinct icon materials, their image shader and
+matching textures, and confirms the old template is a debug font material.
+Captured game references and game assets are excluded from source/releases.
+
+Actual game rendering still needs a user test. Replace this mod with
+0.1.10-test while the game is closed, then Purge / Deploy in Arsenal.
+No icons, shaders, materials, font files or GUI binaries ship in this Lua-only
+release. Auto Reload 0.3.28-test and installed game files remain unchanged.
 
 ## Native Menu Gate And Slot Numbers (0.1.8-test)
 
@@ -295,7 +303,8 @@ Game memory is read only; only normal keyboard input is generated. No mouse thro
 
 Log: `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/hd2_helper_stratagem_hotkeys.log`.
 Look for `OVERLAY selected kind=...`, `INPUT list-key-acquired` and `COMMAND kind=...`,
-and `OVERLAY icons=...` for native icon availability,
+and `OVERLAY icons=...` for native icon availability. Missing images also log
+`OVERLAY icon-fallback kind=... material=... reason=...`,
 then `game-direction-observed step=...` for each direction. A missing action
 produces `game-direction-not-observed step=... direction=... vk=...` and stops.
 `command-input-observed; game-result-unverified` confirms native direction input
@@ -307,7 +316,9 @@ observation only, not successful ball preparation or a completed call.
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
 Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.9-test/*`; never package scratch captures.
+Run `node tools/native-icons.test.cjs` for the optional pinned-game material
+regression when local reference captures and game bundles are available.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.10-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 

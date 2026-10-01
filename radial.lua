@@ -1,8 +1,7 @@
 local Radial = {}
 Radial.__index = Radial
-local ICON_MATERIAL, ICON_SLOT = "ccf39a02b444fa01", "3aa8b87e00000000"
 function Radial.new(sr, channel, scale, trace)
-    return setmetatable({sr = sr, channel = channel, scale = scale or 1, ids = {}, icons = {}, trace = trace}, Radial)
+    return setmetatable({sr = sr, channel = channel, scale = scale or 1, ids = {}, icon_reasons = {}, trace = trace}, Radial)
 end
 function Radial:dimensions()
     -- Gui.resolution accepts an optional viewport, never a Gui object.
@@ -29,10 +28,6 @@ function Radial:clear()
     if live then
         for _, item in ipairs(self.ids) do self.sr.Gui["destroy_" .. item[1]](self.gui, item[2]) end
     end
-    for _, icon in pairs(self.icons) do
-        if live and icon.id ~= nil then self.sr.Gui.destroy_bitmap(icon.gui, icon.id) end
-        icon.id = nil
-    end
     self.ids, self.signature = {}, nil
 end
 function Radial:restore()
@@ -45,15 +40,8 @@ function Radial:restore()
 end
 function Radial:close()
     self.opened, self.selected, self.inventory = false, nil, nil
-    local good, why = pcall(function()
-        self:clear()
-        if self.gui and self:world_live(self.world) then
-            for _, icon in pairs(self.icons) do
-                if icon.gui then self.sr.World.destroy_gui(self.world, icon.gui) end
-            end
-        end
-        self.icons, self.icon_report = {}, nil
-    end)
+    local good, why = pcall(self.clear, self)
+    self.icon_reasons, self.icon_report = {}, nil
     self:restore()
     if not good then error(why) end
 end
@@ -62,53 +50,29 @@ function Radial:dispose()
     if self.gui and self:world_live(self.world) then
         self.sr.World.destroy_gui(self.world, self.gui)
     end
-    self.icons, self.icon_material, self.icon_slot, self.icon_report = {}, nil, nil, nil
     self.gui, self.world = nil, nil
 end
 function Radial:icon_data(picture)
     local sr = self.sr
     if type(picture) ~= "string" or #picture ~= 16 or not picture:match("^[0-9a-fA-F]+$") or
-        picture == "0000000000000000" then return nil end
-    if not sr.Gui.bitmap or not sr.Gui.destroy_bitmap or not sr.Gui.material or not sr.Material or
-        not sr.Material.set_texture or not sr.IdString64 or not sr.IdString64.from_hex then return nil end
-    local ok, material, slot, texture = pcall(function()
-        local ids = sr.IdString64.from_hex
-        local mat, field = self.icon_material or ids(ICON_MATERIAL), self.icon_slot or ids(ICON_SLOT)
-        local art = ids(picture)
-        if not mat or not field or not art or not sr.Application.can_get("material", mat) or
-            not sr.Application.can_get("texture", art) then return end
-        return mat, field, art
-    end)
-    if not ok or not material then return nil end
-    self.icon_material, self.icon_slot = material, slot
-    return {picture = picture, texture = texture}
+        picture == "0000000000000000" then return nil, "invalid-reference" end
+    if not sr.Gui.bitmap or not sr.Gui.destroy_bitmap then return nil, "bitmap-api-unavailable" end
+    if not sr.IdString64 or not sr.IdString64.from_hex then return nil, "idstring-api-unavailable" end
+    local ok, material = pcall(sr.IdString64.from_hex, picture)
+    if not ok or not material then return nil, "material-id-failed:" .. tostring(material) end
+    local queried, available = pcall(sr.Application.can_get, "material", material)
+    if not queried then return nil, "material-query-failed:" .. tostring(available) end
+    if available ~= true then return nil, "native-material-unavailable" end
+    -- Definition +176 names the native icon material, which already binds its own texture/shader.
+    return {picture = picture, material = material}, "ready"
 end
-function Radial:icon(index, data, x, y, size, colour)
+function Radial:icon(data, x, y, size, colour)
     if not data then return false end
-    local sr, icon = self.sr, self.icons[index]
-    if not icon then
-        -- Gui.material is GUI-local; separate owned surfaces keep textures independent.
-        local good, gui = pcall(sr.World.create_screen_gui, self.world, "scale", 1, 1)
-        if not good or not gui or gui == 0 then
-            self.icons[index] = {failed = true}
-            return false
-        end
-        icon = {gui = gui}
-        self.icons[index] = icon
-        local bound, material = pcall(sr.Gui.material, gui, self.icon_material)
-        if not bound or not material or material == 0 then icon.failed = true; return false end
-        icon.material = material
-    end
-    if icon.failed then return false end
-    if icon.picture ~= data.picture then
-        local good = pcall(sr.Material.set_texture, icon.material, self.icon_slot, data.texture)
-        if not good then icon.failed = true; return false end
-        icon.picture = data.picture
-    end
-    local good, id = pcall(sr.Gui.bitmap, icon.gui, self.icon_material,
+    local sr = self.sr
+    local good, id = pcall(sr.Gui.bitmap, self.gui, data.material,
         sr.Vector3(x - size / 2, y - size / 2, 11), sr.Vector2(size, size), colour)
-    if not good or id == nil then icon.failed = true; return false end
-    icon.id = id
+    if not good or id == nil then return false, "bitmap-failed:" .. tostring(id) end
+    self.ids[#self.ids + 1] = {"bitmap", id}
     return true
 end
 function Radial:open(inventory)
@@ -193,21 +157,15 @@ function Radial:draw(inventory)
     local nx, ny = self.channel.cursor()
     if not nx then return false end
     self.selected = Radial.pick(nx, ny, w, h, #rows, scale)
-    local mark, pictures = {tostring(self.selected), tostring(w), tostring(h)}, {}
+    local mark, pictures, reasons = {tostring(self.selected), tostring(w), tostring(h)}, {}, {}
     for index, row in ipairs(rows) do
-        pictures[index] = self:icon_data(row.picture)
+        pictures[index], reasons[index] = self:icon_data(row.picture)
         mark[#mark + 1] = row.kind .. ":" .. row.status .. ":" .. tostring(row.name) .. ":" .. tostring(row.slot) ..
-            ":" .. tostring(row.ready) .. ":" .. (pictures[index] and row.picture or "no-icon")
+            ":" .. tostring(row.ready) .. ":" .. tostring(row.picture) .. ":" .. tostring(reasons[index])
     end
     local signature = table.concat(mark, "|")
     if signature == self.signature then return true end
     self:clear()
-    for index, icon in pairs(self.icons) do
-        if not pictures[index] then
-            if icon.gui then sr.World.destroy_gui(self.world, icon.gui) end
-            self.icons[index] = nil
-        end
-    end
     local radius = base_radius * scale
     local inner, outer = 54 * scale, radius + 64 * scale
     local cx, cy = w / 2, h / 2
@@ -228,8 +186,15 @@ function Radial:draw(inventory)
         local label_width = math.min(210 * scale, 2 * radius * math.sin(math.pi / math.max(2, #rows)) - 16 * scale)
         local icon_size = math.min(72 * scale,
             2 * radius * math.sin(math.pi / math.max(2, #rows)) / math.sqrt(2) - 8 * scale)
-        local shown = self:icon(index, pictures[index], x, y + 5 * scale, icon_size, ink)
+        local shown, why = self:icon(pictures[index], x, y + 5 * scale, icon_size, ink)
         if shown then drawn_icons = drawn_icons + 1 end
+        local reason = not shown and (why or reasons[index] or "unknown") or nil
+        local report = reason and (row.kind .. ":" .. tostring(row.picture) .. ":" .. reason) or nil
+        if report and report ~= self.icon_reasons[index] and self.trace then
+            self.trace("OVERLAY icon-fallback kind=" .. row.kind .. " material=" .. tostring(row.picture) ..
+                " reason=" .. reason:gsub("[\r\n]", " "))
+        end
+        self.icon_reasons[index] = report
         self:text(row.name or ("STRATAGEM " .. row.kind), x, y - (shown and 49 or 7) * scale,
             (shown and 14 or 16) * scale, ink, label_width)
         if row.slot then self:text(tostring(row.slot), x, y + 48 * scale, 18 * scale, ink) end

@@ -17,7 +17,7 @@ return function(equal, read_file, source)
     local sr = {Vector2 = v, Vector3 = v, Color = function(...) return {...} end,
         Application = {worlds = function() return worlds end, main_world = function() return 1 end,
             can_get = function(kind, resource)
-                if resource == "ccf39a02b444fa01" then return false end
+                if resource ~= "core/performance_hud/debug" then return false end
                 assert(resource == "core/performance_hud/debug", "existing debug resource only")
                 return resources[kind] == true
             end},
@@ -54,7 +54,9 @@ return function(equal, read_file, source)
     local inventory = {token = "TOKEN", rows = {}}
     for index = 1, 4 do inventory.rows[index] = {kind = index, slot = index, ready = index ~= 2,
         picture = "0000000100000001", name = "ITEM", status = index == 2 and "5s" or "READY"} end
-    local radial = Radial.new(sr, channel, 1, function(line) phases[#phases + 1] = line end)
+    local radial = Radial.new(sr, channel, 1, function(line)
+        if not line:find("icon-fallback", 1, true) then phases[#phases + 1] = line end
+    end)
     equal(radial:open(inventory), true, "radial opens")
     equal(table.concat(phases, "|"), "OVERLAY stage=resources|OVERLAY stage=dimensions|OVERLAY stage=world|" ..
         "OVERLAY stage=create-gui|OVERLAY stage=cursor|OVERLAY stage=draw|OVERLAY icons=0/4|OVERLAY stage=ready",

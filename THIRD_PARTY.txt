@@ -19,7 +19,11 @@ https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Windo
 Native cooldown/icon field layout reference (facts only, no source/assets copied):
 https://www.nexusmods.com/helldivers2/mods/15298
 Versions 0.1.2-test and newer remove the vanilla GUI material copies introduced in
-0.1.1-test. Version 0.1.9-test binds already-loaded game icon textures to GUI-local
-instances of an existing native material. It ships only Lua resources; no HUD+
-code, materials, images, fonts or binary GUI resources are redistributed.
+0.1.1-test. Version 0.1.10-test draws the already-loaded per-stratagem native icon
+material directly. It removes the incorrect debug-font template used in
+0.1.9-test, performs no texture/material mutation, and allocates no extra icon GUIs.
+Native definition/material/shader/texture relationships were checked read-only
+in local game bundles; captured references and assets are excluded from releases.
+It ships only Lua resources; no HUD+ code, materials, images, fonts or binary GUI
+resources are redistributed.
 https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Material.html
