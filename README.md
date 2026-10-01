@@ -1,12 +1,45 @@
-# HD2 Stratagem Hotkeys 0.1.8-test
+# HD2 Stratagem Hotkeys 0.1.9-test
 
-Hold your game-configured Stratagem List key, move toward a named sector, then
+Hold your game-configured Stratagem List key, move toward an icon sector, then
 release the key to enter its command. F6 and Mouse Button 4 are no longer separate
 overlay bindings; no fixed Alt key is assumed.
 Release in the center to cancel. Aim and throw manually. The radial menu reads
 the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## Native Stratagem Icons (0.1.9-test)
+
+The radial now displays the game's stratagem icons, with personal slot numbers
+above them and smaller names/readiness below. Unavailable entries are dimmed.
+One-to-sixteen item layouts clamp square icon sizes to avoid overlap, including
+small screens and the 130% option. Missing images retain the readable name layout.
+
+Icons use the texture hash read from each native stratagem definition. The addon
+checks that both the native GUI template and the texture are already available
+before binding them. The template is `ccf39a02b444fa01`; its `DiffuseMap` slot
+was checked in the installed game's compiled material. No icons, shaders,
+materials, font files or GUI binaries are included in this Lua-only release.
+The addon does not load a custom image package during startup.
+
+Each icon has a separate owned screen GUI and GUI-local material instance.
+This prevents binding one icon from replacing the others or altering HUD+
+materials. Hover redraws reuse surfaces and unchanged bindings. Closing releases
+the icon surfaces; disappearing resources also retire their surfaces so recovery
+gets fresh bindings. World replacement/shutdown discards or releases owned
+surfaces without dereferencing a stale world. Native APIs follow the
+[Gui bitmap/material contract](https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Gui.html)
+and [texture-slot contract](https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Material.html).
+`OVERLAY icons=4/4` logs the number of images drawn; partial counts indicate
+resource/API fallback rather than confirmation of game rendering.
+
+3,524 LuaJIT checks pass without sending OS input. These include independent
+textures, icon changes/unloading/recovery, GUI/material/binding/draw failures,
+retained redraws, shutdown and stale-world cleanup, and non-overlapping image
+bounds for 1-16 entries at 320x240, 1280x720 and 3840x2160. The actual native
+rendering and game command acceptance still require a live user test. Replace
+this mod with 0.1.9-test while the game is closed, then Purge / Deploy in Arsenal.
+Auto Reload 0.3.28-test stays unchanged; installed game files were not changed.
 
 ## Native Menu Gate And Slot Numbers (0.1.8-test)
 
@@ -245,9 +278,10 @@ sequence timing, cancellation, key release, callback chaining and input conflict
 Actual mission loadout order, host/client play, text rendering, camera capture,
 cursor restoration and ball preparation still need a live test. Names use the
 game's debug labels in this first radial version, not translated OCR text.
-The GUI uses the game's existing debug font on an overlay world; it does not
-reuse HUD+ widgets or ship any binary GUI assets. Missing font/material/API data prevents
-the overlay from opening rather than invoking a missing resource.
+The GUI uses the game's existing debug font and loaded icon textures on owned
+overlay surfaces; it does not reuse HUD+ widgets or ship binary GUI assets.
+Missing required font/material/API data prevents the overlay from opening.
+Unavailable optional icon resources or APIs fall back to the existing name layout.
 
 Supported binaries: Steam build 25480438 / EXE 1.8.46015.0, guarded by both file hashes.
 The first release supports a keyboard Hold binding for opening the list and Press
@@ -261,6 +295,7 @@ Game memory is read only; only normal keyboard input is generated. No mouse thro
 
 Log: `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/hd2_helper_stratagem_hotkeys.log`.
 Look for `OVERLAY selected kind=...`, `INPUT list-key-acquired` and `COMMAND kind=...`,
+and `OVERLAY icons=...` for native icon availability,
 then `game-direction-observed step=...` for each direction. A missing action
 produces `game-direction-not-observed step=... direction=... vk=...` and stops.
 `command-input-observed; game-result-unverified` confirms native direction input
@@ -272,7 +307,7 @@ observation only, not successful ball preparation or a completed call.
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
 Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.8-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.9-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 

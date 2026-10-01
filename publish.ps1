@@ -2,12 +2,12 @@ param(
     [Parameter(Mandatory)][string]$AssetPath,
     [Parameter(Mandatory)][string]$Commit,
     [string]$Repository = 'pwj891129-arch/HD2-Stratagem-Hotkeys',
-    [string]$Tag = 'stratagem-hotkeys-0.1.8-test'
+    [string]$Tag = 'stratagem-hotkeys-0.1.9-test'
 )
 $ErrorActionPreference = 'Stop'
 $AssetPath = (Resolve-Path -LiteralPath $AssetPath).Path
 $assetName = [IO.Path]::GetFileName($AssetPath)
-if ($assetName -ne 'HD2-Stratagem-Hotkeys-0.1.8-test.zip') { throw 'Unexpected addon package name.' }
+if ($assetName -ne 'HD2-Stratagem-Hotkeys-0.1.9-test.zip') { throw 'Unexpected addon package name.' }
 if ($Commit -notmatch '^[0-9a-f]{40}$') { throw 'A full source commit hash is required.' }
 if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Invalid repository name.' }
 $credentialLines = "protocol=https`nhost=github.com`n`n" | git -c "safe.directory=$PSScriptRoot" credential fill
@@ -22,19 +22,19 @@ $headers = @{ Authorization = 'Bearer ' + $credential['password']; Accept = 'app
     'User-Agent' = 'HD2-Helper-Addon-Release'; 'X-GitHub-Api-Version' = '2022-11-28' }
 $api = "https://api.github.com/repos/$Repository/releases"
 $notes = @'
-## HD2 Stratagem Hotkeys 0.1.8-test
+## HD2 Stratagem Hotkeys 0.1.9-test
 
-캐릭터의 실제 스트라타젬 메뉴 활성 상태로 원형 오버레이를 제한하고, 원형 메뉴의 번호를 개인 장착 슬롯 핫키와 맞춘 테스트 빌드입니다.
+원형 스트라타젬 메뉴에 게임 원본 아이콘을 표시하는 테스트 빌드입니다.
 
-- 목록 열기 키를 눌렀다는 사실만으로 오버레이를 열지 않습니다. 캐릭터의 실제 게임 메뉴가 활성화된 것을 확인한 뒤 표시합니다.
-- 게임 메뉴 활성화 확인은 최대 350ms만 기다립니다. 확인되지 않거나 읽을 수 없으면 원형 메뉴와 마우스 제어를 활성화하지 않습니다.
-- 키를 누르는 중 실제 메뉴가 닫히거나 캐릭터가 교체되면 선택을 취소합니다. 입력 중에도 메뉴 비활성화·캐릭터 변경이 확인되면 남은 커맨드를 중단하고 모드가 누른 키를 해제합니다.
-- 정상적으로 목록 키를 놓을 때는 마지막 선택을 유지합니다. 실제 메뉴 닫힘과 재활성화를 확인한 뒤 커맨드를 전송합니다.
-- 숫자열 1~4 핫키는 개인 장착 슬롯 1~4와 매칭됩니다. 공용/임무 항목이 섞여도 원형 메뉴의 개인 번호는 변하지 않습니다.
-- 공용/임무 스트라타젬에는 숫자 핫키 번호를 표시하지 않습니다. 사용 가능 상태일 때 원형 메뉴에서 마우스로 선택할 수 있습니다.
-- 숫자 핫키도 실제 캐릭터 메뉴가 활성화된 경우에만 방향 커맨드를 보냅니다. 기존 게임 설정 키 매핑, 방향 입력 감지 확인, 15/30ms 설정과 조준·투척 수동 방식을 유지합니다.
+- 게임의 스트라타젬 정의에서 읽은 아이콘을 원형 메뉴에 표시합니다. 번호는 위쪽, 이름과 사용 가능 상태/대기시간은 아래쪽에 표시합니다.
+- 사용할 수 없는 스트라타젬은 아이콘을 어둡게 표시합니다. 공용/임무 스트라타젬도 해당 아이콘을 표시합니다.
+- 이미 게임에 로드된 기본 이미지 재질과 텍스처만 사용합니다. 별도의 아이콘 파일, 복사된 재질, 셰이더 또는 바이너리 GUI 리소스를 패키지에 추가하지 않습니다.
+- 아이콘마다 독립된 모드 소유 GUI와 재질 인스턴스를 사용해 다른 아이콘이나 HUD+의 이미지를 덮어쓰지 않도록 구성했습니다.
+- 마우스 이동에 따른 다시 그리기는 GUI와 변경되지 않은 이미지 바인딩을 재사용합니다. 메뉴 종료와 이미지 자원 소실 시 아이콘 GUI를 해제해 오래된 핸들이 남지 않도록 했습니다.
+- 아이콘 자원이나 표시 API를 사용할 수 없으면 이름 표시로 돌아갑니다. 실제 메뉴 활성 상태 확인, 개인 슬롯 1~4 번호 매칭과 기존 커맨드 입력 동작은 유지합니다.
+- 1~16개 항목과 작은 화면/큰 메뉴 설정에서도 아이콘의 가로세로 비율을 유지하고 서로 겹치지 않도록 크기를 제한했습니다.
 
-고정 해시로 검증하는 게임 버전의 실제 메뉴 활성 조회 코드를 확인해 읽기 전용 판독에 연결했습니다. 게임의 사용 가능 조건을 임의로 재현하거나 내부 함수를 호출하지 않습니다. 실제 커맨드 호출 성공은 별도 인게임 확인이 필요합니다.
+로그의 `OVERLAY icons=4/4`는 아이콘 그리기 호출이 네 개 모두 완료됐다는 뜻입니다. 일부만 표시되거나 0/4라면 이미지 자원/API 확인이 필요합니다. 이 로그만으로 실제 화면 렌더링이나 스트라타젬 호출 성공을 확정할 수는 없습니다.
 
 ### 설치
 
@@ -43,13 +43,13 @@ $notes = @'
 자동재장전은 기존 HD2 Auto Reload 0.3.28-test를 유지하면 됩니다. 이번 수정으로 자동재장전 모드를 교체할 필요는 없습니다. 헬퍼의 동일 기능을 동시에 켜지 마세요.
 로그: `%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\hd2_helper_stratagem_hotkeys.log`
 
-903개 LuaJIT 검사와 최소 크기·Lua-only 패키지 검사를 통과했습니다. 공용 항목이 섞인 번호 매칭, 실제 메뉴가 비활성인데 Alt 입력만 있는 상태, 지연 활성화, 시간 제한, 캐릭터 없음/교체, 입력 중 메뉴 닫힘과 기존 입력 경로를 모의 검사했습니다. 메뉴 상태의 실제 게임 판독 및 커맨드 수신은 인게임 검증이 필요합니다. 설치된 게임 모드 파일을 자동 변경하거나 게임에 입력을 보내지 않았습니다.
+3,524개 LuaJIT 검사와 최소 크기·Lua-only 패키지 검사를 통과했습니다. 아이콘별 독립 이미지, 이미지 교체/자원 소실/복구, GUI·재질·바인딩·그리기 실패 시 이름 표시, 메뉴 종료/월드 교체 정리와 기존 입력 동작을 모의 검사했습니다. 320x240·1280x720·3840x2160에서 1~16개 아이콘의 화면 범위와 서로 겹치지 않는 배치를 검사했습니다. 실제 게임 아이콘 표시와 커맨드 수신은 인게임 검증이 필요합니다. 설치된 모드 파일을 자동 변경하거나 게임에 입력을 보내지 않았습니다.
 '@
 try {
     $releases = Invoke-RestMethod -Uri ($api + '?per_page=100') -Headers $headers
     $release = $releases | Where-Object tag_name -eq $Tag | Select-Object -First 1
     if (-not $release) {
-        $body = @{ tag_name = $Tag; target_commitish = $Commit; name = 'HD2 Stratagem Hotkeys 0.1.8-test (native menu gate and slot numbers)';
+        $body = @{ tag_name = $Tag; target_commitish = $Commit; name = 'HD2 Stratagem Hotkeys 0.1.9-test (native stratagem icons)';
             body = $notes; draft = $true; prerelease = $true } | ConvertTo-Json
         $release = Invoke-RestMethod -Method Post -Uri $api -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
     }

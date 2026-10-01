@@ -413,6 +413,7 @@ equal(env.shutdown(), "shutdown", "shutdown chain")
 equal(env.HD2StratagemHotkeys.blocking_inputs, false)
 
 dofile("radial.test.lua")(equal, read_file, source)
+dofile("icons.test.lua")(equal)
 dofile("policy.test.lua")(equal)
 
 local ffi = require("ffi")

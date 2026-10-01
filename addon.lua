@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.8-test lua-only; platform-init")
+log("BOOT 0.1.9-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -42,9 +42,9 @@ local reader = Reader.new(channel)
 local policy = Policy.new(channel.command_key, function(binding) return reader:command_state(binding) end)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale, log)
-local state = {version = "0.1.8-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.9-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.8-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("START 0.1.9-test; Arsenal-only options; list-key radial; command only; no automatic throw")
 log("INPUT direction-mode=virtual-key; game-action-observation=required")
 log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
 local function note(reason)

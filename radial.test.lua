@@ -17,6 +17,7 @@ return function(equal, read_file, source)
     local sr = {Vector2 = v, Vector3 = v, Color = function(...) return {...} end,
         Application = {worlds = function() return worlds end, main_world = function() return 1 end,
             can_get = function(kind, resource)
+                if resource == "ccf39a02b444fa01" then return false end
                 assert(resource == "core/performance_hud/debug", "existing debug resource only")
                 return resources[kind] == true
             end},
@@ -56,7 +57,7 @@ return function(equal, read_file, source)
     local radial = Radial.new(sr, channel, 1, function(line) phases[#phases + 1] = line end)
     equal(radial:open(inventory), true, "radial opens")
     equal(table.concat(phases, "|"), "OVERLAY stage=resources|OVERLAY stage=dimensions|OVERLAY stage=world|" ..
-        "OVERLAY stage=create-gui|OVERLAY stage=cursor|OVERLAY stage=draw|OVERLAY stage=ready",
+        "OVERLAY stage=create-gui|OVERLAY stage=cursor|OVERLAY stage=draw|OVERLAY icons=0/4|OVERLAY stage=ready",
         "open phases distinguish native API failures")
     equal(resolutions, 2, "opening and drawing both query back buffer without a GUI argument")
     local labels, bitmaps = 0, 0
