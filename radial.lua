@@ -1,7 +1,15 @@
 local Radial = {}
 Radial.__index = Radial
-function Radial.new(sr, channel, scale)
-    return setmetatable({sr = sr, channel = channel, scale = scale or 1, ids = {}}, Radial)
+function Radial.new(sr, channel, scale, trace)
+    return setmetatable({sr = sr, channel = channel, scale = scale or 1, ids = {}, trace = trace}, Radial)
+end
+function Radial:dimensions()
+    -- Gui.resolution accepts an optional viewport, never a Gui object.
+    local width, height = self.sr.Gui.resolution()
+    if type(width) == "number" and type(height) == "number" and
+        width >= 320 and height >= 240 and width <= 32768 and height <= 32768 then
+        return width, height
+    end
 end
 function Radial.pick(x, y, width, height, count, scale)
     if not x or not y or count < 1 then return nil end
@@ -42,29 +50,41 @@ function Radial:dispose()
 end
 function Radial:open(inventory)
     local sr, app, win = self.sr, self.sr.Application, self.sr.Window
-    if not sr.Gui or not sr.World or not win or not sr.Vector3 or not sr.Vector2 or not sr.Color or
+    local function stage(name) if self.trace then self.trace("OVERLAY stage=" .. name) end end
+    if not app or not sr.Gui or not sr.World or not win or not sr.Vector3 or not sr.Vector2 or not sr.Color or
         not win.set_mouse_focus or not win.mouse_focus or not win.show_cursor or
         not win.set_show_cursor or not self.channel.cursor or not self.channel.center_cursor or
         not app.worlds or not app.main_world or not app.can_get or
         not sr.World.create_screen_gui or not sr.World.destroy_gui or not sr.Gui.resolution or
         not sr.Gui.triangle or not sr.Gui.destroy_triangle or not sr.Gui.text or
         not sr.Gui.text_extents or not sr.Gui.destroy_text then return false, "overlay-api-unavailable" end
+    if not inventory or type(inventory.rows) ~= "table" or #inventory.rows < 1 or #inventory.rows > 16 then
+        return false, "overlay-inventory-unavailable"
+    end
+    stage("resources")
     if not app.can_get("font", "core/performance_hud/debug") then
         return false, "overlay-font-unavailable"
     end
+    if not app.can_get("material", "core/performance_hud/debug") then
+        return false, "overlay-material-unavailable"
+    end
+    stage("dimensions")
+    local width, height = self:dimensions()
+    if not width then return false, "overlay-resolution-unavailable" end
+    self.width, self.height = width, height
     if self.mouse then self:restore(); if self.mouse then return false, "cursor-restore-pending" end end
+    stage("world")
     local main, target = app.main_world(), nil
     for _, world in pairs(app.worlds() or {}) do if world ~= main then target = world; break end end
     if not target then return false, "overlay-world-unavailable" end
     if self.world ~= target or not self.gui or not self:world_live(self.world) then
         self:dispose()
+        stage("create-gui")
         self.gui = sr.World.create_screen_gui(target, "scale", 1, 1)
         if not self.gui then return false, "overlay-gui-unavailable" end
         self.world = target
     end
-    local width, height = sr.Gui.resolution(self.gui)
-    if not width or not height or width < 320 or height < 240 then return false, "overlay-resolution-unavailable" end
-    self.width, self.height = width, height
+    stage("cursor")
     self.mouse = {show = win.show_cursor(), focus = win.mouse_focus()}
     if type(self.mouse.show) ~= "boolean" or type(self.mouse.focus) ~= "boolean" then
         self.mouse = nil; return false, "cursor-state-unavailable"
@@ -73,7 +93,9 @@ function Radial:open(inventory)
     win.set_show_cursor(true)
     if not self.channel.center_cursor() then self:close(); return false, "cursor-center-failed" end
     self.inventory, self.opened = inventory, true
-    self:draw(inventory)
+    stage("draw")
+    if not self:draw(inventory) then self:close(); return false, "overlay-surface-unavailable" end
+    stage("ready")
     return true
 end
 function Radial:shape(kind, ...)
@@ -83,7 +105,8 @@ function Radial:shape(kind, ...)
 end
 function Radial:text(text, x, y, size, colour, maximum_width)
     local sr, font = self.sr, "core/performance_hud/debug"
-    if not sr.Application.can_get("font", font) or not sr.Gui.text or not sr.Gui.text_extents then return end
+    if not sr.Application.can_get("font", font) or not sr.Application.can_get("material", font) or
+        not sr.Gui.text or not sr.Gui.text_extents then return end
     local lo, hi = sr.Gui.text_extents(self.gui, text, font, size)
     local width = hi.x - lo.x
     local limit = math.min(self.width - 40, maximum_width or self.width)
@@ -97,8 +120,10 @@ end
 function Radial:draw(inventory)
     if not self.opened or not self:world_live(self.world) then return false end
     local sr, rows, scale = self.sr, inventory.rows, self.scale
-    local w, h = sr.Gui.resolution(self.gui)
-    if not w or not h or w < 320 or h < 240 or #rows < 1 or #rows > 16 then return false end
+    local w, h = self:dimensions()
+    if not w or #rows < 1 or #rows > 16 or
+        not sr.Application.can_get("font", "core/performance_hud/debug") or
+        not sr.Application.can_get("material", "core/performance_hud/debug") then return false end
     self.width, self.height = w, h
     local base_radius = #rows > 8 and 210 or 165
     scale = math.min(scale, h / (2 * (base_radius + 104)), w / (2 * (base_radius + 76)))

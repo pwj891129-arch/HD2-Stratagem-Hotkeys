@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.4-test
+# HD2 Stratagem Hotkeys 0.1.5-test
 
 Hold your game-configured Stratagem List key, move toward a named sector, then
 release the key to enter its command. F6 and Mouse Button 4 are no longer separate
@@ -7,6 +7,36 @@ Release in the center to cancel. Aim and throw manually. The radial menu reads
 the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## Overlay Native API Fix
+
+The 0.1.4-test log reached `BOOT platform-ready`, `START`, binding detection and
+`OVERLAY list-key pressed`, then stopped before `OVERLAY opened`. The new dump
+records an access violation reading address `0x3` at `helldivers2.exe+0x108062`;
+it is not the earlier option-archive crash. The dump has no symbolized Lua/native
+stack, so it does not by itself prove which GUI call faulted.
+
+Inspection found a definite API-contract error: `Gui.resolution(self.gui)`.
+[Stingray's API reference](https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Gui.html)
+defines an optional **viewport**, not a GUI, as its first argument. Omitting it
+returns the back-buffer dimensions. The installed vehicle HUD also uses the
+no-argument form. Both opening and drawing now call `Gui.resolution()`; native
+access violations cannot be recovered by Lua `pcall`.
+
+Dimensions are checked before creating a GUI, and both the existing debug font
+and its material must be available before drawing text. A failed first draw
+closes the menu and restores the cursor instead of reporting success. Open-stage
+logs distinguish resources, dimensions, world, GUI creation, cursor and drawing.
+Startup or a binding change with the list key already held requires a release
+before a fresh press can activate either the radial or the number shortcut.
+
+The strict GUI mock rejects arguments to `Gui.resolution`, checks the screen-GUI
+scale and text resource contracts, and covers invalid dimensions, missing
+material, first-draw failure, resource loss and held startup/rebound keys.
+435 LuaJIT checks pass offline. This fixes the confirmed bad call, but successful
+startup and overlay rendering still need a user test in the actual game.
+Replace only this mod with 0.1.5-test, with the game closed, then Purge / Deploy.
+Auto Reload 0.3.27-test does not need a new build for this GUI fix.
 
 ## List-Key Overlay And Loadout Fix
 
@@ -109,7 +139,7 @@ Actual mission loadout order, host/client play, text rendering, camera capture,
 cursor restoration and ball preparation still need a live test. Names use the
 game's debug labels in this first radial version, not translated OCR text.
 The GUI uses the game's existing debug font on an overlay world; it does not
-reuse HUD+ widgets or ship any binary GUI assets. Missing font/API data prevents
+reuse HUD+ widgets or ship any binary GUI assets. Missing font/material/API data prevents
 the overlay from opening rather than invoking a missing resource.
 
 Supported binaries: Steam build 25480438 / EXE 1.8.46015.0, guarded by both file hashes.
@@ -131,7 +161,7 @@ Look for `OVERLAY opened rows=...` and `COMMAND kind=...`, then `command-complet
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
 Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.4-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.5-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 

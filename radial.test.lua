@@ -6,6 +6,8 @@ return function(equal, read_file, source)
     end
     local x, y, foreground, worlds = 0.5, 0.5, true, {1, 2}
     local show, focus, created, destroyed, shapes, next_id = false, true, 0, 0, {}, 0
+    local width, height, resolutions, phases = 1280, 720, 0, {}
+    local resources = {font = true, material = true}
     local channel = {
         foreground = function() return foreground end,
         cursor = function() return x, y end,
@@ -14,26 +16,49 @@ return function(equal, read_file, source)
     local function v(a, b, c) return {x = a, y = b, z = c} end
     local sr = {Vector2 = v, Vector3 = v, Color = function(...) return {...} end,
         Application = {worlds = function() return worlds end, main_world = function() return 1 end,
-            can_get = function() return true end},
-        World = {create_screen_gui = function(w) equal(w, 2, "own overlay world"); created = created + 1; return 99 end,
+            can_get = function(kind, resource)
+                assert(resource == "core/performance_hud/debug", "existing debug resource only")
+                return resources[kind] == true
+            end},
+        World = {create_screen_gui = function(w, option, sx, sy)
+                equal(w, 2, "own overlay world")
+                assert(option == "scale" and sx == 1 and sy == 1, "native screen GUI scale contract")
+                created = created + 1; return 99
+            end,
             destroy_gui = function() destroyed = destroyed + 1 end},
         Window = {show_cursor = function() return show end, mouse_focus = function() return focus end,
             set_show_cursor = function(b) show = b end, set_mouse_focus = function(b) focus = b end},
-        Gui = {resolution = function() return 1280, 720 end,
+        Gui = {resolution = function(...)
+                assert(select("#", ...) == 0, "Gui.resolution must not receive a Gui object")
+                resolutions = resolutions + 1; return width, height
+            end,
             material = function() error("custom material path must stay disabled") end,
             text_extents = function(_, text, _, size) return v(0, 0), v(#text * size * 0.5, size) end},
         Material = {set_texture = function() error("native texture mutation must stay disabled") end},
         IdString64 = {from_hex = function(t) return t end},
     }
     for _, kind in ipairs({"triangle", "bitmap", "text"}) do
-        sr.Gui[kind] = function(...) next_id = next_id + 1; shapes[next_id] = {kind, ...}; return next_id end
+        sr.Gui[kind] = function(gui, ...)
+            assert(gui == 99, "own GUI receives draw primitives")
+            if kind == "text" then
+                local text, font, size, material = ...
+                assert(type(text) == "string" and font == "core/performance_hud/debug" and
+                    material == font and resources.font and resources.material and size > 0,
+                    "loaded text font/material and positive size required")
+            end
+            next_id = next_id + 1; shapes[next_id] = {kind, gui, ...}; return next_id
+        end
         sr.Gui["destroy_" .. kind] = function(_, id) equal(shapes[id] ~= nil, true, "only own shape destroyed"); shapes[id] = nil end
     end
     local inventory = {token = "TOKEN", rows = {}}
     for index = 1, 4 do inventory.rows[index] = {kind = index, ready = index ~= 2,
         picture = "0000000100000001", name = "ITEM", status = index == 2 and "5s" or "READY"} end
-    local radial = Radial.new(sr, channel, 1)
+    local radial = Radial.new(sr, channel, 1, function(line) phases[#phases + 1] = line end)
     equal(radial:open(inventory), true, "radial opens")
+    equal(table.concat(phases, "|"), "OVERLAY stage=resources|OVERLAY stage=dimensions|OVERLAY stage=world|" ..
+        "OVERLAY stage=create-gui|OVERLAY stage=cursor|OVERLAY stage=draw|OVERLAY stage=ready",
+        "open phases distinguish native API failures")
+    equal(resolutions, 2, "opening and drawing both query back buffer without a GUI argument")
     local labels, bitmaps = 0, 0
     for _, shape in pairs(shapes) do
         if shape[1] == "text" and shape[3] == "ITEM" then labels = labels + 1 end
@@ -60,10 +85,40 @@ return function(equal, read_file, source)
     end
     equal(name_size ~= nil and name_size > 0, true, "single sector keeps positive font size")
     radial:dispose()
-    sr.Application.can_get = function() return false end
+    resources.font = false
     local opened, why = radial:open(inventory)
     equal(opened, false, "missing native font declines overlay")
     equal(why, "overlay-font-unavailable")
+    local creations = created
+    resources.font, resources.material = true, false
+    opened, why = radial:open(inventory)
+    equal(opened, false, "missing material declines before GUI allocation")
+    equal(why, "overlay-material-unavailable")
+    equal(created, creations)
+    resources.material = true
+    for _, dimensions in ipairs({{0, 720}, {1280, 0}, {"1280", 720}, {math.huge, 720}, {0 / 0, 720}}) do
+        width, height = dimensions[1], dimensions[2]
+        opened, why = radial:open(inventory)
+        equal(opened, false, "invalid dimensions decline before native GUI creation")
+        equal(why, "overlay-resolution-unavailable")
+        equal(created, creations)
+    end
+    width, height = 1280, 720
+    channel.cursor = function() return nil end
+    opened, why = radial:open(inventory)
+    equal(opened, false, "failed initial draw must not report an open overlay")
+    equal(why, "overlay-surface-unavailable")
+    equal(radial.opened, false)
+    equal(show, false, "failed first draw restores cursor visibility")
+    equal(focus, true, "failed first draw restores mouse capture")
+    channel.cursor = function() return x, y end
+    equal(radial:open(inventory), true)
+    before = next_id
+    resources.material = false
+    equal(radial:draw(inventory), false, "resource loss declines before native drawing")
+    equal(next_id, before, "resource loss creates no native primitives")
+    radial:dispose()
+    resources.material = true
 
     -- Actual addon sequencing with GUI/cursor and keyboard adapters; no OS input.
     local current, held, events, ready, token, focused, idle, menu = 0, {}, {}, true, "TOKEN", true, true, true
@@ -162,5 +217,28 @@ return function(equal, read_file, source)
     equal(mock_radial.opened, false, "binding change while overlay open cancels selection")
     held[162] = false; step(0.02); finish()
     equal(#events, 14, "binding change never enters stale command")
+    env.shutdown()
+
+    -- Keys held before startup or a binding change are not fresh activation edges.
+    env.update, env.shutdown, env.HD2StratagemHotkeys = nil, nil, nil
+    held, events, opened_count = {[164] = true, [49] = true}, {}, 0
+    init(); step(0); finish()
+    equal(opened_count, 0, "startup with held list key never opens the radial")
+    equal(#events, 0, "startup chord never inputs directions")
+    held[164], held[49] = false, false; step(0.02)
+    held[164] = true; step(0.02)
+    equal(mock_radial.opened, true, "release and fresh press arm the list key")
+    held[162] = true
+    binding = {start_vk = 162, directions = {38, 39, 40, 37}}
+    step(0.3)
+    equal(mock_radial.opened, false, "rebinding to an already held key cancels the old overlay")
+    finish()
+    equal(opened_count, 1, "held rebound key never opens a new overlay")
+    equal(#events, 0, "held rebound key never confirms the cancelled selection")
+    held[164], held[162] = false, false; step(0.02)
+    held[162] = true; step(0.02)
+    equal(mock_radial.opened, true, "released rebound key can open normally")
+    held[162] = false; step(0.02); finish()
+    equal(#events, 6, "fresh rebound hold-release inputs exactly one command")
     env.shutdown()
 end

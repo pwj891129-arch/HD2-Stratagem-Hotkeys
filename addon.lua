@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.4-test lua-only; platform-init")
+log("BOOT 0.1.5-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -40,10 +40,10 @@ local config = {radial = option("radial", false), hotkeys = option("hotkeys", tr
     delay = option("slow", false) and 0.030 or 0.015}
 local reader, policy = Reader.new(channel), Policy.new(channel.key)
 policy.delay = config.delay
-local radial = Radial.new(sr, channel, config.scale)
-local state = {version = "0.1.4-test", keys = {}, blocking_inputs = false, config = config}
+local radial = Radial.new(sr, channel, config.scale, log)
+local state = {version = "0.1.5-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.4-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("START 0.1.5-test; Arsenal-only options; list-key radial; command only; no automatic throw")
 log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
 local function note(reason)
     if reason ~= state.reason then log(reason); state.reason = reason end
@@ -95,14 +95,18 @@ local function tick()
         local bindings, why = reader:bindings()
         if bindings and not same_binding(bindings, state.bindings) then
             log("BINDING list-key vk=" .. bindings.start_vk)
+            state.list_ready = not channel.down(bindings.start_vk)
+            if not state.list_ready then log("WAIT list-key-release") end
         end
+        if not bindings then state.list_ready = false end
         state.bindings, state.binding_due = bindings, now + 0.25
         if not bindings then note("WAIT " .. why) end
     end
     local binding = state.bindings
     local modifier = binding and channel.down(binding.start_vk) or false
+    if binding and not modifier then state.list_ready = true end
     -- An injected list-key hold finishes a command; it must not reopen the radial.
-    local overlay = config.radial and modifier and not state.owned_start or false
+    local overlay = config.radial and state.list_ready and modifier and not state.owned_start or false
     local overlay_pressed, overlay_released = overlay and not state.overlay, not overlay and state.overlay
     state.overlay = overlay
     local numbers, pressed, count = {}, nil, 0
@@ -119,7 +123,7 @@ local function tick()
         return
     end
     -- Number shortcuts take priority over the radial on the same list-key hold.
-    local shortcut = config.hotkeys and modifier and pressed and count == 1 and
+    local shortcut = config.hotkeys and state.list_ready and modifier and pressed and count == 1 and
         not policy.job and not state.pending and not state.owned_start
     if shortcut then
         radial:close()
