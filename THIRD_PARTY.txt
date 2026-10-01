@@ -32,3 +32,11 @@ https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Mater
 Native atlas/RGB-mask research reference (facts only; no code copied):
 The user's deployed DiverKit addon (native tile / atlas query relationships).
 These offsets and lookup steps were independently verified in local native code.
+
+Mouse binding/input API references (facts only; no source copied):
+https://help.autodesk.com/cloudhelp/KOR/Stingray-Help/lua_ref/ns_stingray_Mouse.html
+https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput
+https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+Native mouse mapping kind/input-index relationships were checked in the local
+read-only binding reference. Runtime thumb-button IDs are resolved by the
+engine API, not assumed to be fixed numbers. Only X button list events are sent.

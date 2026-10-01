@@ -1,12 +1,51 @@
-# HD2 Stratagem Hotkeys 0.1.11-test
+# HD2 Stratagem Hotkeys 0.1.12-test
 
-Hold your game-configured Stratagem List key, move toward an icon sector, then
-release the key to enter its command. F6 and Mouse Button 4 are no longer separate
-overlay bindings; no fixed Alt key is assumed.
+Hold your game-configured Stratagem List key (keyboard or mouse thumb button),
+move toward an icon sector, then release it to enter its command. F6 and mouse
+buttons are not independent overlay shortcuts; use the game's List binding.
+No fixed Alt key is assumed.
 Release in the center to cancel. Aim and throw manually. The radial menu reads
 the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## Mouse Thumb List Binding (0.1.12-test)
+
+The user's log ended with `WAIT keyboard-binding-or-trigger-unsupported` after
+rebinding the List action to a thumb button. The previous reader accepted only
+keyboard mappings, and the list-input sender rejected mouse virtual keys.
+
+The List action now accepts an unmodified Hold mapping to either thumb button.
+The reader checks the native mouse mapping kind and matching input-table index.
+The engine's Mouse.button_id/button_name round trip resolves extra_1/extra_2;
+no raw mouse-button index is guessed. Missing or inconsistent API results fail
+closed. Keyboard Hold bindings and keyboard Press direction bindings are unchanged.
+Mouse directions, wheel/double-click mappings and controller bindings remain unsupported.
+
+Holding the configured thumb button opens the radial only when the character's
+native stratagem menu is active. Releasing commits the last highlighted row,
+waits for the original menu to close, briefly reacquires the same thumb button
+and sends the saved keyboard directions. The owned hold cannot reopen the
+radial. Configured thumb button + number-row 1-4 uses the same personal slots.
+Binding changes, chat, loss of focus and native menu closure still cancel safely.
+
+The list sender uses Windows XBUTTON1/XBUTTON2 down/up events; it does not click
+fire/aim, move the mouse or throw automatically. The reused INPUT buffer switches
+back to keyboard mode before directions or keyboard list input. Only an owned
+list hold is released. The binding log includes `device=mouse-thumb` and `vk=5`
+or `vk=6`. See the [Mouse API](https://help.autodesk.com/cloudhelp/KOR/Stingray-Help/lua_ref/ns_stingray_Mouse.html)
+and [MOUSEINPUT contract](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput).
+
+3,862 LuaJIT checks pass without OS input. Added regressions cover both thumb
+bindings, nonstandard engine button IDs, invalid/missing APIs and mappings,
+Hold-only gating, mouse/keyboard INPUT reuse, down/up flags, command selection,
+number shortcuts, held rebinding, focus-loss cleanup and character eligibility.
+Actual mouse-bound gameplay needs confirmation; the game was not running during
+these checks. Installed game/mod files and Auto Reload 0.3.28-test are unchanged.
+
+With the game closed, replace this mod in Arsenal, enable the radial option and
+Purge / Deploy. Set the game's Stratagem List button to Hold, not Press/toggle.
+The icon display path from 0.1.11-test is retained without changes.
 
 ## Atlas And RGB-mask Icons (0.1.11-test)
 
@@ -313,8 +352,8 @@ menu size to fit the screen, even when the larger option is selected.
 Hold your game's Stratagem List key, then press number-row 1, 2, 3 or 4.
 The addon inputs the equipped slot's direction command. Aim and throw manually.
 Keep the list key held until the command finishes. Release it to cancel.
-The current player's four loadout slots, command definitions and saved keyboard
-bindings are read from the game. No HUD+, Helper preset or stratagem catalog is required.
+The current player's four loadout slots, command definitions and saved List and
+keyboard direction bindings are read from the game. No HUD+, Helper preset or stratagem catalog is required.
 
 ## Install
 
@@ -342,14 +381,15 @@ Missing required font/material/API data prevents the overlay from opening.
 Unavailable optional icon resources or APIs fall back to the existing name layout.
 
 Supported binaries: Steam build 25480438 / EXE 1.8.46015.0, guarded by both file hashes.
-The first release supports a keyboard Hold binding for opening the list and Press
-bindings for the four directions. It declines unbound, modified, controller-only,
-mouse-only, duplicated or unsupported mappings rather than guessing keys.
+Opening the list supports keyboard or mouse thumb Hold bindings; the four
+directions support keyboard Press bindings. Unbound, modified, controller-only,
+other mouse buttons, mouse directions and unsupported mappings are declined.
 Number-row keys are distinct from Numpad keys. A command is not repeated while a number is held.
 Direction keys already held, fire, Enter, Escape, another menu or loss of game focus cancel/block input.
 Input steps hold and release for at least 15 ms and one update each; there is no busy wait.
 The addon does not bypass cooldowns, ammunition, jammers or game restrictions.
-Game memory is read only; only normal keyboard input is generated. No mouse throw is generated.
+Game memory is read only; normal keyboard input and configured thumb-button
+list down/up events are generated. No mouse throw is generated.
 
 Log: `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/hd2_helper_stratagem_hotkeys.log`.
 Look for `OVERLAY selected kind=...`, `INPUT list-key-acquired` and `COMMAND kind=...`,

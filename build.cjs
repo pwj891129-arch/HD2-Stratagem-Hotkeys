@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.11-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.12-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -57,11 +57,11 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'Native RGB-mask stratagem icons with read-only atlas regions and game palette. Isolated owned GUI materials; missing metadata/resources fall back to names with diagnostic logs. Lua-only package, no icon assets or GUI binaries. Radial opens only after the character\'s game menu activates. Personal numbers match hotkeys 1-4. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
+  Description: 'Game-configured keyboard or mouse thumb Hold binding opens the radial; releasing selects a command. Native RGB-mask stratagem icons with read-only atlas regions and game palette. Isolated owned GUI materials; missing metadata/resources fall back to names. Lua-only package, no icon assets or GUI binaries. Opens only after the character\'s game menu activates. Personal numbers match hotkeys 1-4. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
   Options: []};
 const pack = require('./tools/package.cjs');
 const options = [
-  ['radial', '원형 오버레이 ON/OFF', '캐릭터의 실제 스트라타젬 메뉴가 활성화된 경우에만 아이콘·이름·번호·대기시간을 표시합니다. 목록 열기 키를 누른 채 마우스로 고른 뒤 놓으면 커맨드를 입력합니다. 조준/투척은 수동입니다.', ['Addon']],
+  ['radial', '원형 오버레이 ON/OFF', '캐릭터의 실제 스트라타젬 메뉴가 활성화된 경우에만 아이콘·이름·번호·대기시간을 표시합니다. 게임에 설정한 목록 열기 키(키보드/마우스 엄지버튼)를 누른 채 마우스로 고른 뒤 놓으면 커맨드를 입력합니다. 열기 동작은 누르고 있기(Hold)여야 합니다. 조준/투척은 수동입니다.', ['Addon']],
   ['hotkeys', 'Stratagem Hotkeys', '목록 열기 키 + 숫자열 1~4로 개인 장착 슬롯 커맨드를 입력합니다. 원형 메뉴에 표시된 개인 슬롯 번호와 매칭됩니다.', ['Addon']],
   ['shared', '공용/임무 스트라타젬 표시', '체크하면 공용/임무 스트라타젬도 원형 메뉴에 포함합니다. 개인 슬롯 번호 1~4는 유지하며 공용 항목에는 숫자 핫키를 표시하지 않습니다.', []],
   ['large', '큰 원형 메뉴', '체크하면 130%, 미체크하면 100% 크기입니다.', []],

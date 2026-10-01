@@ -29,7 +29,7 @@ const large = pack.archive([pack.lua('test/large', 'x'.repeat(8192))]);
 checkMinimum(large);
 assert.equal(large.length, 192 + Math.ceil((8192 + 8) / 16) * 16);
 
-const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.11-test');
+const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.12-test');
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, 'manifest.json'), 'utf8'));
 const folders = [...new Set(manifest.Options.flatMap(option => option.Include))];
 const ids = new Set();
@@ -60,7 +60,7 @@ for (const folder of folders) {
     const source = archive.subarray(offset + 8, offset + size).toString('utf8');
     if (folder === 'Addon') {
       assert(source.startsWith('-- HD2-Addon: mods/hd2_helper/stratagem_hotkeys\n'));
-      assert(source.includes('BOOT 0.1.11-test'));
+      assert(source.includes('BOOT 0.1.12-test'));
       assert(source.includes('reader:game_menu()'));
       assert(source.includes('game-stratagem-menu-closed'));
       assert(source.includes('tostring(row.slot)'));
@@ -86,6 +86,10 @@ for (const folder of folders) {
       assert(source.includes('exe + 0x1a10238'));
       assert(source.includes('self:read(payload, 40) ~= raw'));
       assert(source.includes('self:radial(include_shared, false)'));
+      assert(source.includes('Platform.send_list(user, input, vk, pressed)'));
+      assert(source.includes('Platform.mouse_keys((rawget(_G, "stingray") or {}).Mouse)'));
+      assert(source.includes('word(raw, entry + 4) == 32 + index'));
+      assert(source.includes('device='));
       assert(source.includes('OVERLAY icon-fallback kind='));
       assert(source.includes('OVERLAY icons='));
       assert(!/radial_icon_|create_material|set_resource_override|WriteProcessMemory|VirtualProtect/.test(source));

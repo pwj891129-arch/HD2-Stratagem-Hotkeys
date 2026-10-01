@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.11-test lua-only; platform-init")
+log("BOOT 0.1.12-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -42,9 +42,9 @@ local reader = Reader.new(channel)
 local policy = Policy.new(channel.command_key, function(binding) return reader:command_state(binding) end)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale, log)
-local state = {version = "0.1.11-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.12-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.11-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("START 0.1.12-test; Arsenal-only options; list-key radial; command only; no automatic throw")
 log("OVERLAY icon-path=atlas-rgb-mask; read-only lookup; owned-GUI materials")
 log("INPUT direction-mode=virtual-key; game-action-observation=required")
 log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
@@ -100,7 +100,8 @@ local function tick()
     if not state.bindings or now >= (state.binding_due or 0) then
         local bindings, why = reader:bindings()
         if bindings and not same_binding(bindings, state.bindings) then
-            log("BINDING list-key vk=" .. bindings.start_vk)
+            log("BINDING list-key vk=" .. bindings.start_vk .. " device=" ..
+                ((bindings.start_vk == 5 or bindings.start_vk == 6) and "mouse-thumb" or "keyboard"))
             state.list_ready = not channel.down(bindings.start_vk)
             if not state.list_ready then log("WAIT list-key-release") end
         end

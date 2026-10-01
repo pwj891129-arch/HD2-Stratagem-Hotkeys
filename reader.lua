@@ -229,16 +229,21 @@ function Reader:bindings()
             for mapping = 0, count - 1 do
                 local entry = at + 8 + mapping * 20
                 local flags, trigger = word(raw, entry), word(raw, entry + 8)
-                if flags % 16 == 3 and math.floor(flags / 16) % 16 == 4 and
-                    math.floor(flags / 256) % 256 == 255 then
-                    local vk = math.floor(flags / 1048576)
-                    if vk > 6 and vk <= 254 and ((code == 0x50000 and trigger == 2) or
-                        (code ~= 0x50000 and trigger == 0)) then
+                if math.floor(flags / 16) % 16 == 4 and math.floor(flags / 256) % 256 == 255 then
+                    local kind, index, vk = flags % 16, math.floor(flags / 1048576), nil
+                    if kind == 3 and index > 6 and index <= 254 then vk = index end
+                    if kind == 4 and code == 0x50000 and self.channel.mouse_vk and
+                        word(raw, entry + 4) == 32 + index then
+                        local mouse = self.channel.mouse_vk(index)
+                        if mouse == 5 or mouse == 6 then vk = mouse end
+                    end
+                    if vk and ((code == 0x50000 and trigger == 2) or (code ~= 0x50000 and trigger == 0)) then
                         if not chosen then chosen = vk end
                     end
                 end
             end
-            if not chosen then return nil, "keyboard-binding-or-trigger-unsupported" end
+            if not chosen then return nil, code == 0x50000 and "list-binding-or-trigger-unsupported" or
+                "keyboard-direction-binding-or-trigger-unsupported" end
             actions[code] = chosen
         end
     end

@@ -142,7 +142,7 @@ return function(equal, read_file, source)
     radial:dispose()
     resources.material = true
 
-    -- Actual addon sequencing with GUI/cursor and keyboard adapters; no OS input.
+    -- Actual addon sequencing with GUI/cursor and input adapters; no OS input.
     local current, held, events, ready, token, focused, idle, menu = 0, {}, {}, true, "TOKEN", true, true, true
     local menu_override, hover, acknowledge = nil, 1, true
     local game_available, game_token, game_active_override = true, "CHARACTER", nil
@@ -501,4 +501,63 @@ return function(equal, read_file, source)
     equal(#events, 0, "number shortcut also refuses inactive native character menu")
     equal(opened_count, 0)
     env.shutdown()
+
+    for _, vk in ipairs({5, 6}) do
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); held[vk] = true; step(0.02)
+        equal(mock_radial.opened, true, "saved thumb button opens the radial")
+        equal(#events, 0, "mouse menu opening never injects an input")
+        held[vk] = false; step(0.02); finish()
+        equal(#events, 6, "thumb release runs exactly one command after reacquisition")
+        equal(events[1][1], vk); equal(events[1][2], true); equal(events[1][3], "list")
+        equal(events[2][1], 38); equal(events[2][3], "command")
+        equal(events[6][1], vk); equal(events[6][2], false)
+        equal(opened_count, 1, "owned mouse hold cannot reopen the radial")
+        equal(env.HD2StratagemHotkeys.blocking_inputs, false)
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); held[vk], held[49] = true, true; step(0.02); finish()
+        equal(opened_count, 0, "thumb plus number shortcut takes priority over the radial")
+        equal(#events, 4, "physical thumb shortcut sends only directions")
+        for _, event in ipairs(events) do equal(event[3], "command") end
+        held[vk], held[49] = false, false; step(0.02); finish()
+        equal(#events, 4, "thumb shortcut release does not send another command")
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        held[vk] = true; step(0.3); finish()
+        equal(opened_count, 0, "rebinding to a held thumb button waits for release")
+        equal(#events, 0)
+        held[vk] = false; step(0.02); held[vk] = true; step(0.02)
+        equal(opened_count, 1, "fresh thumb press opens after release")
+        focused = false; step(0.02); held[vk] = false; focused = true; finish()
+        equal(#events, 0, "focus loss cancels a mouse selection without input")
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); held[vk] = true; step(0.02); held[vk] = false; step(0.02)
+        menu_override = false
+        for index = 1, 4 do step(0.02) end
+        equal(env.HD2StratagemHotkeys.owned_start, vk, "pending command owns the reacquired thumb button")
+        equal(#events, 1)
+        focused = false; step(0.02)
+        equal(#events, 2, "focus loss releases only the owned thumb button before directions")
+        equal(events[2][1], vk); equal(events[2][2], false)
+        equal(env.HD2StratagemHotkeys.owned_start, nil)
+        equal(env.HD2StratagemHotkeys.pending, nil)
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); game_active_override = false
+        held[vk] = true; step(0.02); finish()
+        equal(opened_count, 0, "thumb button cannot bypass native character-menu eligibility")
+        equal(#events, 0)
+        held[vk] = false; step(0.02); env.shutdown()
+    end
 end

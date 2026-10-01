@@ -31,10 +31,12 @@ local owner, buckets, players, history, ui = 0x20000000, 0x21000000, 0x22000000,
 root("input", owner); root("players", players); root("loadouts", history); root("ui", ui)
 put(owner + 686800, pointer(buckets) .. word(256))
 put(buckets, string.rep("\255", 256 * 328))
-local function binding(action, vk, trigger)
+local function binding(action, vk, trigger, kind)
     local at = buckets + action * 328
-    local flags = vk * 1048576 + trigger * 65536 + 255 * 256 + 0x43
-    put(at, word(0x50000 + action) .. word(1) .. word(flags) .. word(vk + 49) .. word(trigger) .. word(0) .. word(0))
+    kind = kind or 3
+    local flags = vk * 1048576 + trigger * 65536 + 255 * 256 + 0x40 + kind
+    put(at, word(0x50000 + action) .. word(1) .. word(flags) .. word(kind == 4 and vk + 32 or vk + 49) ..
+        word(trigger) .. word(0) .. word(0))
 end
 binding(0, 164, 2); binding(1, 37, 0); binding(2, 39, 0); binding(3, 38, 0); binding(4, 40, 0)
 put(owner + 808 + 32 * (5 * 97), "\1" .. string.rep("\0", 159))
@@ -135,6 +137,57 @@ binding(3, 87, 0)
 binding(0, 164, 0)
 equal(reader:bindings(), nil, "non-hold start declined")
 binding(0, 164, 2)
+local mouse_indices = {extra_1 = 3, extra_2 = 4}
+local mouse = {button_id = function(name) return mouse_indices[name] end,
+    button_name = function(index)
+        for name, id in pairs(mouse_indices) do if id == index then return name end end
+    end}
+local mouse_keys = Platform.mouse_keys(mouse)
+channel.mouse_vk = function(index) return mouse_keys[index] end
+for index, vk in pairs({[3] = 5, [4] = 6}) do
+    binding(0, index, 2, 4)
+    local saved = assert(reader:bindings())
+    equal(saved.start_vk, vk, "saved thumb button maps to its Windows X button")
+    equal(table.concat(saved.directions, ","), "87,68,83,65", "mouse list key leaves keyboard directions unchanged")
+    binding(0, index, 0, 4)
+    equal(reader:bindings(), nil, "mouse list key still requires Hold")
+end
+for _, index in ipairs({0, 1, 2, 5, 6, 15}) do
+    binding(0, index, 2, 4)
+    equal(reader:bindings(), nil, "other mouse buttons/wheel/double clicks are not guessed as thumb buttons")
+end
+binding(0, 3, 2, 4)
+put(buckets + 12, word(99))
+equal(reader:bindings(), nil, "mouse input table index must agree with saved button")
+binding(0, 3, 2, 4)
+channel.mouse_vk = nil
+equal(reader:bindings(), nil, "unavailable engine mouse IDs fail closed")
+channel.mouse_vk = function(index) return mouse_keys[index] end
+put(buckets + 8, word(3 * 1048576 + 2 * 65536 + 1 * 256 + 0x44))
+equal(reader:bindings(), nil, "modified mouse chord remains unsupported")
+binding(0, 3, 2, 1)
+equal(reader:bindings(), nil, "controller button is not a mouse binding")
+binding(0, 164, 2); binding(3, 3, 0, 4)
+equal(reader:bindings(), nil, "direction command sender remains keyboard-only")
+binding(3, 87, 0)
+equal(assert(reader:bindings()).start_vk, 164, "keyboard list binding remains supported")
+mouse_indices = {extra_1 = 5, extra_2 = 9}
+mouse_keys = Platform.mouse_keys(mouse)
+equal(mouse_keys[5], 5); equal(mouse_keys[9], 6)
+equal(mouse_keys[3], nil, "engine IDs are looked up rather than hardcoded")
+binding(0, 9, 2, 4)
+equal(assert(reader:bindings()).start_vk, 6, "nonstandard engine button ID still uses XBUTTON2")
+for _, api in ipairs({{}, {button_id = function() return 3 end},
+    {button_id = function() error("unavailable") end, button_name = function() return "extra_1" end},
+    {button_id = function() return -1 end, button_name = function() return "extra_1" end},
+    {button_id = function() return 4096 end, button_name = function() return "extra_1" end},
+    {button_id = function() return 3.5 end, button_name = function() return "extra_1" end},
+    {button_id = function() return 3 end, button_name = function() return "wheel_up" end},
+    {button_id = function() return 3 end, button_name = function() error("unavailable") end}}) do
+    equal(next(Platform.mouse_keys(api)), nil, "missing/mismatched mouse API cannot guess a binding")
+end
+equal(next(Platform.mouse_keys(nil)), nil)
+channel.mouse_vk = nil; binding(0, 164, 2)
 local loadout = assert(reader:loadout())
 equal(table.concat(loadout.slots, ","), "113,101,66,1", "local peer and slot order")
 equal(reader:word(local_record + 0x788), 0, "legacy count offset is not the equipped count")
@@ -457,6 +510,50 @@ end
 equal(#encoded, encoded_count, "declined keys send no input")
 user.HD2SH_SendInput = function() return 0 end
 equal(Platform.send_key(user, input, 38, true, true), false, "failed Windows insertion reported")
+local mouse_events, mouse_scans = {}, 0
+local mouse_user = {HD2SH_MapVirtualKeyW = function(vk, mode)
+        mouse_scans = mouse_scans + 1
+        return user.HD2SH_MapVirtualKeyW(vk, mode)
+    end,
+    HD2SH_SendInput = function(count, data, size)
+        assert(count == 1 and size == 40)
+        if data[0].type == 0 then
+            local m = data[0].value.mouse
+            mouse_events[#mouse_events + 1] = {0, tonumber(m.data), tonumber(m.flags)}
+            equal(tonumber(m.x), 0); equal(tonumber(m.y), 0)
+            equal(tonumber(m.time), 0); equal(tonumber(m.extra), 0)
+        else
+            local k = data[0].value.key
+            mouse_events[#mouse_events + 1] = {tonumber(data[0].type), tonumber(k.vk), tonumber(k.flags)}
+            equal(tonumber(k.time), 0); equal(tonumber(k.extra), 0)
+        end
+        return 1
+    end}
+for _, vk in ipairs({5, 6}) do
+    equal(Platform.send_list(mouse_user, input, vk, true), true)
+    equal(mouse_events[#mouse_events][1], 0, "list thumb button uses MOUSEINPUT, not KEYBDINPUT")
+    equal(mouse_events[#mouse_events][2], vk == 5 and 1 or 2, "XBUTTON1/XBUTTON2 data preserved")
+    equal(mouse_events[#mouse_events][3], 0x80, "X button down without movement/throw flags")
+    equal(Platform.send_list(mouse_user, input, vk, false), true)
+    equal(mouse_events[#mouse_events][3], 0x100, "release owns only the selected X button")
+end
+equal(mouse_scans, 0, "mouse route never maps a keyboard scan code")
+equal(Platform.send_key(mouse_user, input, 38, true, true), true)
+equal(mouse_events[#mouse_events][1], 1, "shared INPUT returns to keyboard mode after mouse list key")
+equal(mouse_events[#mouse_events][2], 38); equal(mouse_events[#mouse_events][3], 1)
+equal(Platform.send_list(mouse_user, input, 164, true), true)
+equal(mouse_events[#mouse_events][1], 1); equal(mouse_events[#mouse_events][2], 0)
+equal(mouse_events[#mouse_events][3], 8, "Alt list scan-code behavior unchanged")
+local mouse_count = #mouse_events
+for _, vk in ipairs({0, 1, 2, 3, 4, 5.5, "5", 255}) do
+    equal(Platform.send_list(mouse_user, input, vk, true), false, "list sender cannot click fire/aim/middle/invalid buttons")
+end
+equal(Platform.send_key(mouse_user, input, 5, true, true), false, "commands remain keyboard-only")
+equal(Platform.send_key(mouse_user, input, 6, true, true), false)
+equal(#mouse_events, mouse_count, "declined input sends nothing")
+mouse_user.HD2SH_SendInput = function() return 0 end
+equal(Platform.send_list(mouse_user, input, 5, true), false, "failed X button insertion reported")
+equal(Platform.send_list(mouse_user, input, 6, false), false, "failed X button release reported")
 local user32 = ffi.load("user32")
 for _, name in ipairs({"GetCursorPos", "ScreenToClient", "ClientToScreen", "GetClientRect", "SetCursorPos"}) do
     equal(user32["HD2SH_" .. name] ~= nil, true, "cursor symbol resolved without calling it")

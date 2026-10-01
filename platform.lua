@@ -36,13 +36,37 @@ int HD2SH_BCryptFinishHash(void*, void*, unsigned int, unsigned int) __asm__("BC
 int HD2SH_BCryptDestroyHash(void*) __asm__("BCryptDestroyHash");
 ]]
 
+function Platform.mouse_keys(mouse)
+    local keys = {}
+    if not mouse or type(mouse.button_id) ~= "function" or type(mouse.button_name) ~= "function" then return keys end
+    for _, button in ipairs({{"extra_1", 5}, {"extra_2", 6}}) do
+        local good, index = pcall(mouse.button_id, button[1])
+        if good and type(index) == "number" and index == math.floor(index) and index >= 0 and index < 4096 then
+            local named, name = pcall(mouse.button_name, index)
+            if named and name == button[1] then keys[index] = button[2] end
+        end
+    end
+    return keys
+end
+
 function Platform.send_key(user, input, vk, pressed, virtual)
     if type(vk) ~= "number" or vk ~= math.floor(vk) or vk <= 6 or vk > 254 then return false end
     local scan = user.HD2SH_MapVirtualKeyW(vk, 4)
     if scan == 0 then return false end
+    input[0].type = 1
     input[0].value.key.vk = virtual and vk or 0
     input[0].value.key.scan = scan % 256
     input[0].value.key.flags = (scan >= 256 and 1 or 0) + (virtual and 0 or 8) + (pressed and 0 or 2)
+    input[0].value.key.time, input[0].value.key.extra = 0, 0
+    return user.HD2SH_SendInput(1, input, 40) == 1
+end
+
+function Platform.send_list(user, input, vk, pressed)
+    if vk ~= 5 and vk ~= 6 then return Platform.send_key(user, input, vk, pressed, false) end
+    input[0].type = 0
+    local mouse = input[0].value.mouse
+    mouse.x, mouse.y, mouse.data = 0, 0, vk == 5 and 1 or 2
+    mouse.flags, mouse.time, mouse.extra = pressed and 0x80 or 0x100, 0, 0
     return user.HD2SH_SendInput(1, input, 40) == 1
 end
 
@@ -87,6 +111,7 @@ function Platform.create(ffi)
     local actual, input = ffi.new("size_t[1]"), ffi.new("HD2SH_INPUT[1]")
     assert(ffi.sizeof("HD2SH_INPUT") == 40, "INPUT layout mismatch")
     input[0].type = 1
+    local mouse_keys = Platform.mouse_keys((rawget(_G, "stingray") or {}).Mouse)
     local cursor, rect = ffi.new("HD2SH_POINT[1]"), ffi.new("HD2SH_RECT[1]")
     local function window()
         local handle = user.HD2SH_GetForegroundWindow()
@@ -109,6 +134,7 @@ function Platform.create(ffi)
             return pid[0] == process_id
         end,
         down = function(vk) return user.HD2SH_GetAsyncKeyState(vk) < 0 end,
+        mouse_vk = function(index) return mouse_keys[index] end,
         cursor = function()
             local handle = window()
             if not handle or user.HD2SH_GetCursorPos(cursor) == 0 or
@@ -126,7 +152,7 @@ function Platform.create(ffi)
             return user.HD2SH_SetCursorPos(cursor[0].x, cursor[0].y) ~= 0
         end,
         key = function(vk, pressed)
-            return Platform.send_key(user, input, vk, pressed, false)
+            return Platform.send_list(user, input, vk, pressed)
         end,
         command_key = function(vk, pressed)
             return Platform.send_key(user, input, vk, pressed, true)
