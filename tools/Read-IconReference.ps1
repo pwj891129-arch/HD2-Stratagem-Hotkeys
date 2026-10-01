@@ -75,7 +75,7 @@ try {
         $key = [BitConverter]::ToUInt64($resource, 0)
         $node = [BitConverter]::ToUInt32($resource, 4) % $capacity
         for ($probe = 0; $probe -lt 128; $probe++) {
-            if ($node -ge $capacity) { break }
+            if ($node -ge 1048576) { break }
             $entry = Read-Bytes ($rows + $node * 24) 24
             if ([BitConverter]::ToUInt32($entry, 16) -eq 0xfffffffe) { break }
             if ([BitConverter]::ToUInt64($entry, 0) -eq $key) {

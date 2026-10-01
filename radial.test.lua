@@ -146,27 +146,43 @@ return function(equal, read_file, source)
     local current, held, events, ready, token, focused, idle, menu = 0, {}, {}, true, "TOKEN", true, true, true
     local menu_override, hover, acknowledge = nil, 1, true
     local game_available, game_token, game_active_override = true, "CHARACTER", nil
+    local mouse_latch, up_failures, ignore_up, mouse_observation = nil, 0, false, true
     local options = {radial = true}
     local binding = {start_vk = 164, directions = {38, 39, 40, 37}}
     local fake = {base = 1, foreground = function() return focused end,
         down = function(vk) return held[vk] or false end,
-        key = function(vk, down) events[#events + 1] = {vk, down, "list"}; held[vk] = down; return true end,
+        key = function(vk, down)
+            events[#events + 1] = {vk, down, "list"}
+            if (vk == 5 or vk == 6) and not down and up_failures > 0 then
+                up_failures = up_failures - 1; return false
+            end
+            held[vk] = down
+            if vk == binding.start_vk and mouse_latch ~= nil and (down or not ignore_up) then mouse_latch = down end
+            return true
+        end,
         command_key = function(vk, down) events[#events + 1] = {vk, down, "command"}; held[vk] = down; return true end}
     local request = function() if ready then return {token = token, kind = 1, keys = {38, 39},
         directions = {1, 2}, bindings = binding} end end
+    local function list_down()
+        if (binding.start_vk == 5 or binding.start_vk == 6) and mouse_latch ~= nil then return mouse_latch end
+        return held[binding.start_vk] == true
+    end
     local fake_reader = {bindings = function() return binding, "ready" end,
         game_menu = function()
             if not game_available then return nil, "no-local-character" end
-            local active = menu and held[binding.start_vk] == true
+            local active = menu and list_down()
             if game_active_override ~= nil then active = game_active_override end
             return {active = active, token = game_token}, "ready"
         end,
         idle = function() return idle end, menu_active = function()
             if menu_override ~= nil then return menu_override end
-            return menu and held[binding.start_vk] == true
+            return menu and list_down()
         end,
-        command_state = function() return {start = menu and held[binding.start_vk] == true,
-            directions = {acknowledge and held[38] == true, acknowledge and held[39] == true, false, false}} end,
+        command_state = function()
+            if not mouse_observation then return nil end
+            return {start = menu and list_down(),
+                directions = {acknowledge and held[38] == true, acknowledge and held[39] == true, false, false}}
+        end,
         loadout = function() return {token = token} end,
         request = request, request_kind = request,
         radial = function() return {token = token, rows = {{kind = 1, ready = ready, status = "READY"}}}, "ready" end}
@@ -290,6 +306,7 @@ return function(equal, read_file, source)
         held, events, opened_count, messages = {}, {}, 0, {}
         menu_override, hover, focused, idle, menu, ready, acknowledge = nil, 1, true, true, true, true, true
         game_available, game_token, game_active_override = true, "CHARACTER", nil
+        mouse_latch, up_failures, ignore_up, mouse_observation = nil, 0, false, true
         binding = {start_vk = 164, directions = {38, 39, 40, 37}}
         init(); step(0)
     end
@@ -559,5 +576,77 @@ return function(equal, read_file, source)
         equal(opened_count, 0, "thumb button cannot bypass native character-menu eligibility")
         equal(#events, 0)
         held[vk] = false; step(0.02); env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); mouse_latch, held[vk] = true, true; step(0.02)
+        hover = nil; step(0.02); held[vk] = false; step(0.02); finish()
+        equal(#events, 1, "center cancel repairs a lost physical mouse up, not a new list press")
+        equal(events[1][1], vk); equal(events[1][2], false)
+        equal(mouse_latch, false); equal(env.HD2StratagemHotkeys.mouse_release, nil)
+        equal(env.HD2StratagemHotkeys.pending, nil); equal(opened_count, 1)
+        equal(table.concat(messages):find("mouse-release-observed vk=" .. vk, 1, true) ~= nil, true)
+        equal(table.concat(messages):find("COMMAND kind=", 1, true), nil)
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); mouse_latch, held[vk] = true, true; step(0.02)
+        held[vk] = false; step(0.02); finish(); finish()
+        equal(#events, 7, "lost physical up is repaired before one selected command")
+        equal(events[1][1], vk); equal(events[1][2], false)
+        equal(events[2][1], vk); equal(events[2][2], true)
+        equal(events[3][1], 38); equal(events[7][1], vk); equal(events[7][2], false)
+        equal(opened_count, 1, "repair and owned list press cannot reopen the radial")
+        equal(table.concat(messages):find("SKIP list-close-timeout", 1, true), nil)
+        equal(env.HD2StratagemHotkeys.mouse_release, nil)
+        equal(env.HD2StratagemHotkeys.blocking_inputs, false)
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); mouse_latch, held[vk] = true, true; step(0.02)
+        focused = false; step(0.02); finish()
+        equal(#events, 0, "never release a physically held thumb button")
+        held[vk] = false; finish()
+        equal(#events, 0, "never replay physical release into another foreground app")
+        focused = true; finish()
+        equal(#events, 1); equal(events[1][2], false)
+        equal(env.HD2StratagemHotkeys.mouse_release, nil)
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); mouse_latch, held[vk] = true, true; step(0.02)
+        up_failures = 3; held[vk] = false; step(0.02); finish(); finish()
+        equal(#events, 3, "failed mouse up insertion has bounded retries and no new press")
+        for _, event in ipairs(events) do equal(event[1], vk); equal(event[2], false) end
+        equal(env.HD2StratagemHotkeys.owned_start, nil)
+        equal(env.HD2StratagemHotkeys.blocking_inputs, true)
+        equal(table.concat(messages):find("mouse-release-send-failed", 1, true) ~= nil, true)
+        mouse_latch = false; finish()
+        equal(env.HD2StratagemHotkeys.mouse_release, nil)
+        equal(env.HD2StratagemHotkeys.blocking_inputs, false)
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); mouse_latch, held[vk] = true, true; step(0.02)
+        ignore_up = true; held[vk] = false; step(0.02); finish(); finish()
+        equal(#events, 1, "Windows success without game release never presses again or sends directions")
+        equal(events[1][2], false)
+        equal(env.HD2StratagemHotkeys.blocking_inputs, true)
+        equal(table.concat(messages):find("mouse-release-not-observed", 1, true) ~= nil, true)
+        mouse_latch = false; finish()
+        equal(env.HD2StratagemHotkeys.mouse_release, nil)
+        env.shutdown()
+
+        restart()
+        binding = {start_vk = vk, directions = {38, 39, 40, 37}}
+        step(0.3); mouse_latch, held[vk] = true, true; step(0.02)
+        mouse_observation = false; held[vk] = false; step(0.02); finish(); finish()
+        equal(#events, 0, "unreadable game state cannot trigger a guessed mouse release")
+        equal(table.concat(messages):find("mouse-release-state-unreadable", 1, true) ~= nil, true)
+        env.shutdown()
     end
 end

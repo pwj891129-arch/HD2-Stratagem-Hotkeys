@@ -66,7 +66,8 @@ function Reader:atlas(picture)
     local low, high = tonumber(picture:sub(9), 16), tonumber(picture:sub(1, 8), 16)
     local node, seen = high % capacity, {}
     for probe = 1, 128 do
-        if node >= capacity or seen[node] then return nil, "atlas-chain-invalid" end
+        -- The divisor counts hash buckets; collision rows can be beyond that range.
+        if node >= 1048576 or seen[node] then return nil, "atlas-chain-invalid" end
         seen[node] = true
         local address = rows + node * 24
         local entry = self:read(address, 24)

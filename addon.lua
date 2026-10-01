@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.12-test lua-only; platform-init")
+log("BOOT 0.1.13-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -42,9 +42,9 @@ local reader = Reader.new(channel)
 local policy = Policy.new(channel.command_key, function(binding) return reader:command_state(binding) end)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale, log)
-local state = {version = "0.1.12-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.13-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.12-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("START 0.1.13-test; Arsenal-only options; list-key radial; command only; no automatic throw")
 log("OVERLAY icon-path=atlas-rgb-mask; read-only lookup; owned-GUI materials")
 log("INPUT direction-mode=virtual-key; game-action-observation=required")
 log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
@@ -59,6 +59,38 @@ local function release_start()
     state.release_due = nil
     return true
 end
+local function close_radial()
+    if state.mouse_capture then
+        state.mouse_release, state.mouse_capture = state.mouse_capture, nil
+    end
+    radial:close()
+end
+local function recover_mouse(now, focused)
+    local waiting = state.mouse_release
+    if not waiting or not focused or radial.opened or radial.mouse or channel.down(waiting.vk) then return end
+    local observed = reader:command_state(waiting.binding)
+    if not observed then
+        state.mouse_release = nil
+        note("INPUT mouse-release-state-unreadable vk=" .. waiting.vk)
+    elseif not observed.start then
+        state.mouse_release = nil
+        if waiting.sent then log("INPUT mouse-release-observed vk=" .. waiting.vk) end
+    elseif waiting.sent then
+        if now >= waiting.expires and not waiting.failed then
+            waiting.failed = true
+            note("INPUT mouse-release-not-observed vk=" .. waiting.vk)
+        end
+    elseif (waiting.attempts or 0) < 3 then
+        -- Cursor capture can hide the physical X-button up event from the game.
+        waiting.attempts = (waiting.attempts or 0) + 1
+        if channel.key(waiting.vk, false) then
+            waiting.sent, waiting.expires = true, now + 0.35
+            log("INPUT mouse-release-replayed vk=" .. waiting.vk)
+        elseif waiting.attempts == 3 then
+            note("INPUT mouse-release-send-failed vk=" .. waiting.vk)
+        end
+    end
+end
 local function stop()
     policy:cancel()
     state.pending = nil
@@ -66,7 +98,7 @@ local function stop()
     state.radial_binding = nil
     state.radial_menu_token = nil
     state.highlight = nil
-    local good, why = pcall(radial.close, radial)
+    local good, why = pcall(close_radial)
     state.release_due = 0
     release_start()
     if not good then error(why) end
@@ -85,12 +117,13 @@ local function tick()
     if type(now) ~= "number" then return end
     local focused = channel.foreground()
     if state.release_due and (now >= state.release_due or not focused) then release_start() end
+    if not radial.opened then radial:restore() end
+    recover_mouse(now, focused)
     if policy.cancelled then
         policy:cancel(); state.release_due = 0; release_start()
-        state.blocking_inputs = policy.held ~= nil or state.owned_start ~= nil
+        state.blocking_inputs = policy.held ~= nil or state.owned_start ~= nil or state.mouse_release ~= nil
         return
     end
-    if not radial.opened then radial:restore() end
     local escape, enter, fire = channel.down(27), channel.down(13), channel.down(1)
     if focused then
         if enter and not state.enter then state.chat = not state.chat end
@@ -113,7 +146,7 @@ local function tick()
     local modifier = binding and channel.down(binding.start_vk) or false
     if binding and not modifier then state.list_ready = true end
     -- An injected list-key hold finishes a command; it must not reopen the radial.
-    local overlay = config.radial and state.list_ready and modifier and not state.owned_start or false
+    local overlay = config.radial and state.list_ready and modifier and not state.owned_start and not state.mouse_release or false
     local overlay_pressed, overlay_released = overlay and not state.overlay, not overlay and state.overlay
     state.overlay = overlay
     local numbers, pressed, count = {}, nil, 0
@@ -131,7 +164,7 @@ local function tick()
                 (state.chat or enter) and "chat" or escape and "escape" or fire and "fire" or "game-menu"
             note((was_open and "OVERLAY cancelled " or was_pending and "INPUT cancelled " or "OVERLAY blocked ") .. why)
         end
-        state.blocking_inputs = focused and modifier
+        state.blocking_inputs = (focused and modifier) or state.mouse_release ~= nil
         return
     end
     local game, game_why
@@ -141,7 +174,7 @@ local function tick()
     local shortcut = config.hotkeys and state.list_ready and modifier and pressed and count == 1 and
         not policy.job and not state.pending and not state.owned_start
     if shortcut and game then
-        radial:close()
+        close_radial()
         state.open_pending = nil
         state.radial_binding = nil
         state.radial_menu_token = nil
@@ -165,7 +198,7 @@ local function tick()
             note("OVERLAY blocked character-state-changed")
         elseif now > waiting.expires then
             state.open_pending = nil
-            note("OVERLAY blocked " .. (game_why or "game-stratagem-menu-not-active"))
+            note("OVERLAY blocked game-stratagem-menu-not-active")
         elseif native_active then
             state.open_pending = nil
             local inventory, why = reader:radial(config.shared)
@@ -173,6 +206,9 @@ local function tick()
                 local opened; opened, why = radial:open(inventory)
                 if opened then
                     state.radial_binding, state.radial_read_due = binding, now + 0.05
+                    if binding.start_vk == 5 or binding.start_vk == 6 then
+                        state.mouse_capture = {vk = binding.start_vk, binding = binding}
+                    end
                     state.radial_menu_token = game.token
                     state.highlight = nil
                     log("OVERLAY opened rows=" .. #inventory.rows)
@@ -197,7 +233,7 @@ local function tick()
         if radial.opened and overlay_released then
             -- The game can recenter the cursor on key-up; keep the last held-frame selection.
             local row = radial.selected and radial.inventory.rows[radial.selected]
-            radial:close()
+            close_radial()
             state.radial_binding = nil
             state.radial_menu_token = nil
             state.highlight = nil
@@ -231,7 +267,7 @@ local function tick()
         elseif pending.stage == "release" then
             if modifier then
                 stop(); note("SKIP list-key-pressed-again")
-            elseif radial.mouse or native_active or reader:menu_active() then
+            elseif radial.mouse or state.mouse_release or native_active or reader:menu_active() then
                 pending.settled = nil
             elseif not pending.settled then
                 pending.settled = now + 0.03
@@ -282,14 +318,15 @@ local function tick()
             if not policy.job then state.release_due = now + 0.03 end
         end
     end
-    state.blocking_inputs = modifier or radial.opened or state.pending ~= nil or policy.job ~= nil or state.owned_start ~= nil
+    state.blocking_inputs = modifier or radial.opened or state.pending ~= nil or policy.job ~= nil or
+        state.owned_start ~= nil or state.mouse_release ~= nil
 end
 local previous = rawget(_G, "update")
 rawset(_G, "update", function(...)
     local good, why = pcall(tick)
     if not good then
         pcall(stop)
-        state.blocking_inputs = policy.held ~= nil or state.owned_start ~= nil
+        state.blocking_inputs = policy.held ~= nil or state.owned_start ~= nil or state.mouse_release ~= nil
         state.radial_failed = true
         log("ERROR " .. tostring(why))
     end
@@ -297,7 +334,9 @@ rawset(_G, "update", function(...)
 end)
 local shutdown = rawget(_G, "shutdown")
 rawset(_G, "shutdown", function(...)
-    pcall(stop); pcall(radial.dispose, radial); state.blocking_inputs = false
+    pcall(stop); pcall(radial.dispose, radial)
+    pcall(function() recover_mouse(app.time_since_launch(), channel.foreground()) end)
+    state.blocking_inputs = false
     if file then pcall(function() file:close() end); file = nil end
     if type(shutdown) == "function" then return shutdown(...) end
 end)

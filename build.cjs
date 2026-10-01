@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.12-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.13-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -57,7 +57,7 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'Game-configured keyboard or mouse thumb Hold binding opens the radial; releasing selects a command. Native RGB-mask stratagem icons with read-only atlas regions and game palette. Isolated owned GUI materials; missing metadata/resources fall back to names. Lua-only package, no icon assets or GUI binaries. Opens only after the character\'s game menu activates. Personal numbers match hotkeys 1-4. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
+  Description: 'Game-configured keyboard or mouse thumb Hold binding opens the radial; releasing selects a command. Repairs lost thumb-button release after cursor capture, with native action confirmation. Native RGB-mask stratagem icons with read-only atlas collision lookup and game palette. Isolated owned GUI materials; missing metadata/resources fall back to names. Lua-only package, no icon assets or GUI binaries. Opens only after the character\'s game menu activates. Personal numbers match hotkeys 1-4. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
   Options: []};
 const pack = require('./tools/package.cjs');
 const options = [

@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.12-test
+# HD2 Stratagem Hotkeys 0.1.13-test
 
 Hold your game-configured Stratagem List key (keyboard or mouse thumb button),
 move toward an icon sector, then release it to enter its command. F6 and mouse
@@ -8,6 +8,44 @@ Release in the center to cancel. Aim and throw manually. The radial menu reads
 the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## Missing Icons And Thumb Release (0.1.13-test)
+
+The user's latest log reports seven of ten icons bound successfully. Supply
+Backpack, Upload Discovery and SEAF Gun fail with `atlas-chain-invalid`.
+The atlas reader incorrectly rejected collision rows beyond the hash bucket
+count. The pinned native query uses that count only as its hash divisor and
+follows full DWORD collision links until the sentinel. The reader now accepts
+those overflow rows with a separate defensive index cap, 128-probe limit,
+cycle detection, small read-only snapshots and existing pointer/UV checks.
+This is a lookup fix, not a change to the native icon assets or rendering palette.
+
+The same log shows selected commands timing out while waiting for the native
+List action to close, before the mod sends any new List press. Cursor capture
+can lose the physical thumb-button release notification. After closing the
+radial and restoring cursor focus, the addon checks both the physical button
+and the native action. If the button is released but the action is still held,
+it replays only the missing up event. Center cancellation also performs this
+cleanup without pressing List again or sending a command.
+
+Recovery does not release a physically held button or send into another
+foreground app. A selected command waits for native release confirmation before
+reacquiring List. Failed insertion has at most three attempts; an inserted up
+that the game does not observe is not repeated, and no new down or directions
+are sent. Logs distinguish `INPUT mouse-release-replayed`,
+`INPUT mouse-release-observed` and unobserved/failed/unreadable release states.
+
+3,955 LuaJIT checks pass with mocked input, including both thumb buttons,
+selected/center cancellation, lost release, focus loss, failed insertion,
+unobserved input and unreadable actions. The native reference regression checks
+the bucket divisor and full collision-link loop independently. The game exited
+before a new live atlas snapshot was obtained; this build's rendering and mouse
+behavior still require an in-game test. No live input was sent, installed mod
+files were not changed, and Auto Reload 0.3.28-test is unchanged.
+
+With the game closed, replace this mod with 0.1.13-test in Arsenal, enable the
+radial option and Purge / Deploy. Set Stratagem List to Hold, not Press/toggle.
+The package contains no game images, materials, shaders, fonts or GUI binaries.
 
 ## Mouse Thumb List Binding (0.1.12-test)
 
@@ -408,7 +446,7 @@ Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
 Run `node tools/native-icons.test.cjs` for the optional pinned-game material
 regression when local reference captures and game bundles are available.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.11-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.13-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 

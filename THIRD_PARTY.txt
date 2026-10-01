@@ -32,6 +32,9 @@ https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Mater
 Native atlas/RGB-mask research reference (facts only; no code copied):
 The user's deployed DiverKit addon (native tile / atlas query relationships).
 These offsets and lookup steps were independently verified in local native code.
+Version 0.1.13-test corrects collision row bounds: the bucket divisor is not
+the limit on linked overflow rows. Full DWORD links were independently checked
+in the pinned native query; runtime reads retain defensive index/probe limits.
 
 Mouse binding/input API references (facts only; no source copied):
 https://help.autodesk.com/cloudhelp/KOR/Stingray-Help/lua_ref/ns_stingray_Mouse.html

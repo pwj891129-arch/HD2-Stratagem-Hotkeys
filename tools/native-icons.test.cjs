@@ -83,6 +83,11 @@ try {
     assert(query.includes(Buffer.from('498b80a0020000', 'hex')) ||
       query.includes(Buffer.from('4d8b80a0020000', 'hex')) ||
       query.includes(Buffer.from('4c8b80a0020000', 'hex')), 'Native atlas rows +0x2a0');
+    assert.equal(query.subarray(0x35, 0x3c).toString('hex'), '41f7b0b4020000',
+      'Native bucket divisor is manager +0x2b4');
+    assert.equal(query.subarray(0x60, 0x79).toString('hex'),
+      '8bc2488d0c404d3b14c87453418b54c81081faffffff7f75e7',
+      'Native chain follows full next DWORD until sentinel, not the bucket divisor');
   }
   console.log('PASS ' + definitions + ' nonzero native definitions / ' + pictures.size +
     ' distinct textures; native RGB-mask template, palette and atlas code verified read-only');
