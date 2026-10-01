@@ -34,6 +34,77 @@ function Reader:hash(at)
     if not lo or not hi or (lo == 0 and hi == 0) then return nil end
     return string.format("%08x%08x", hi, lo)
 end
+local function float(raw, at)
+    local bits = word(raw, at)
+    if not bits then return nil end
+    local exponent, fraction = math.floor(bits / 8388608) % 256, bits % 8388608
+    if exponent == 255 then return nil end
+    local value = exponent == 0 and fraction * 2 ^ -149 or (fraction + 8388608) * 2 ^ (exponent - 150)
+    return bits >= 2147483648 and -value or value
+end
+local function vector(raw, at)
+    local values = {}
+    for index = 0, 3 do
+        local value = float(raw, at + index * 4)
+        if not value or value < 0 or value > 1 then return nil end
+        values[index + 1] = value
+    end
+    return values
+end
+function Reader:atlas(picture)
+    if type(picture) ~= "string" or #picture ~= 16 or not picture:match("^[0-9a-fA-F]+$") or
+        picture == "0000000000000000" then return nil, "invalid-reference" end
+    local exe = self.channel.exe_base
+    if not exe then return nil, "atlas-root-unavailable" end
+    -- Pinned EXE +0x3438e0: high hash word modulo capacity, chained 24-byte entries.
+    local engine = self:ptr(exe + 0x1a10238)
+    local manager = engine and self:ptr(engine + 0x3f8)
+    local header = manager and self:read(manager + 0x2a0, 32)
+    local rows, count, capacity = pointer(header, 0), word(header, 16), word(header, 20)
+    if not rows or not count or not capacity or count > capacity or count < 1 or
+        capacity < 1 or capacity > 1048576 then return nil, "atlas-layout-unavailable" end
+    local low, high = tonumber(picture:sub(9), 16), tonumber(picture:sub(1, 8), 16)
+    local node, seen = high % capacity, {}
+    for probe = 1, 128 do
+        if node >= capacity or seen[node] then return nil, "atlas-chain-invalid" end
+        seen[node] = true
+        local address = rows + node * 24
+        local entry = self:read(address, 24)
+        local link = word(entry, 16)
+        if not link then return nil, "atlas-entry-unreadable" end
+        if link == 4294967294 then return nil, "texture-not-atlased" end
+        if word(entry, 0) == low and word(entry, 4) == high then
+            local payload = pointer(entry, 8)
+            local raw = payload and self:read(payload, 40)
+            local atlas_low, atlas_high = word(raw, 8), word(raw, 12)
+            local uv = vector(raw, 24)
+            if not atlas_low or not atlas_high or (atlas_low == 0 and atlas_high == 0) or not uv or
+                uv[3] <= 0 or uv[4] <= 0 or uv[1] + uv[3] > 1.00001 or uv[2] + uv[4] > 1.00001 then
+                return nil, "atlas-payload-invalid"
+            end
+            if self:ptr(exe + 0x1a10238) ~= engine or self:ptr(engine + 0x3f8) ~= manager or
+                self:read(manager + 0x2a0, 32) ~= header or self:read(address, 24) ~= entry or
+                self:read(payload, 40) ~= raw then return nil, "atlas-changed" end
+            return {texture = string.format("%08x%08x", atlas_high, atlas_low),
+                uv = {uv[1], uv[2], math.min(1, uv[1] + uv[3]), math.min(1, uv[2] + uv[4])}}, "ready"
+        end
+        if link == 2147483647 then return nil, "texture-not-atlased" end
+        node = link
+    end
+    return nil, "atlas-probe-limit"
+end
+function Reader:icon(definition, picture)
+    local index = self:word(definition.record + 184)
+    if not index or index > 4 then return nil, "icon-color-index-invalid" end
+    local primary = vector(self:read(self.channel.base + 0x331b610 + index * 16, 16), 0)
+    local secondary = vector(self:read(self.channel.base + 0x21e89e0, 16), 0)
+    local tertiary = vector(self:read(self.channel.base + 0x21e8a10, 16), 0)
+    if not primary or not secondary or not tertiary then return nil, "icon-colors-unreadable" end
+    local art, why = self:atlas(picture)
+    if not art then return nil, why end
+    art.colors = {primary, secondary, tertiary}
+    return art, "ready"
+end
 function Reader:name(at)
     local address = self:ptr(at)
     if not address then return nil end
@@ -256,7 +327,7 @@ function Reader:inventory(include_shared)
     return {slots = slots, rows = rows, token = peer .. ":" .. table.concat(identities, ",")}, "ready"
 end
 function Reader:loadout() return self:inventory(false) end
-function Reader:radial(include_shared)
+function Reader:radial(include_shared, read_icons)
     local inventory, why = self:inventory(include_shared)
     if not inventory then return nil, why end
     local definitions; definitions, why = self:definitions()
@@ -271,6 +342,7 @@ function Reader:radial(include_shared)
         definition.name = definition.name or self:name(definition.record + 16)
         row.name = (definition.name or ("STRATAGEM " .. row.kind)):gsub("^.-%.%s*", "")
         row.picture = self:hash(definition.record + 176)
+        if read_icons ~= false then row.art, row.art_error = self:icon(definition, row.picture) end
         row.ready = row.uses ~= nil and row.uses > 0 and call_due ~= nil and
             reuse_due ~= nil and call_due <= now and reuse_due <= now
         row.seconds = call_due and reuse_due and math.ceil(math.max(0, call_due - now, reuse_due - now) / 1000000)
@@ -283,7 +355,7 @@ function Reader:radial(include_shared)
 end
 function Reader:request_kind(kind, include_shared)
     if not self:idle() then return nil, "menu-or-chat-open" end
-    local inventory, why = self:radial(include_shared)
+    local inventory, why = self:radial(include_shared, false)
     if not inventory then return nil, why end
     local bindings; bindings, why = self:bindings()
     if not bindings then return nil, why end

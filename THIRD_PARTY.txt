@@ -19,11 +19,16 @@ https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Windo
 Native cooldown/icon field layout reference (facts only, no source/assets copied):
 https://www.nexusmods.com/helldivers2/mods/15298
 Versions 0.1.2-test and newer remove the vanilla GUI material copies introduced in
-0.1.1-test. Version 0.1.10-test draws the already-loaded per-stratagem native icon
-material directly. It removes the incorrect debug-font template used in
-0.1.9-test, performs no texture/material mutation, and allocates no extra icon GUIs.
-Native definition/material/shader/texture relationships were checked read-only
-in local game bundles; captured references and assets are excluded from releases.
+0.1.1-test. Version 0.1.11-test applies the native icon RGB-mask palette and
+resolved atlas region on isolated mod-owned GUI/material instances. It uses
+ReadProcessMemory for bounded atlas-map snapshots, not native game function calls.
+Game/HUD+ material instances remain unchanged. Version 0.1.10-test's direct
+material path was superseded after the user's screenshot showed missing icons.
+Native definition/material/texture and palette/query code were checked read-only.
+Captured references and assets are excluded from source and releases.
 It ships only Lua resources; no HUD+ code, materials, images, fonts or binary GUI
 resources are redistributed.
 https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Material.html
+Native atlas/RGB-mask research reference (facts only; no code copied):
+The user's deployed DiverKit addon (native tile / atlas query relationships).
+These offsets and lookup steps were independently verified in local native code.

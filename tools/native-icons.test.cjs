@@ -22,6 +22,7 @@ for (let kind = 1; kind < 149; kind++) {
   assert(offset >= 0 && offset + 400 <= settings.length, 'Captured definition bounds');
   const picture = settings.readBigUInt64LE(offset + 176);
   if (picture === 0n) continue;
+  assert(settings.readUInt32LE(offset + 184) <= 4, 'Native five-entry icon palette bounds');
   definitions++;
   pictures.add(picture.toString(16).padStart(16, '0'));
 }
@@ -29,6 +30,11 @@ assert(pictures.size >= 100, 'Substantial native definition coverage, not mocked
 const debugId = hash64('core/performance_hud/debug').toString(16);
 assert.equal(debugId, 'ccf39a02b444fa01', 'Old generic template was the debug font material');
 assert(!pictures.has(debugId), 'No stratagem definition references the debug font material');
+assert.equal(image.subarray(0x1893650, 0x1893657).toString('hex'), '488b97b0000000',
+  'Native tile reads definition +176 as texture');
+for (const [at, target] of [[0x1893670, 0x331b610], [0x1893695, 0x21e89e0], [0x18936b3, 0x21e8a10]]) {
+  assert.equal(at + 7 + image.readInt32LE(at + 3), target, 'Native tile shader color address');
+}
 const packages = readBundlesIndex();
 const opened = new Map();
 function resources(packageId, type) {
@@ -47,6 +53,11 @@ try {
   const debug = resources('9ba626afa44a3aa3', 'material').get(debugId);
   assert(debug, 'Native debug font material');
   const debugBytes = readPackageRange(opened, debug.parts, debug.entry.offset, debug.entry.size);
+  const mask = materials.get('c0f3797849262087');
+  assert(mask, 'Native RGB-mask GUI material');
+  const maskBytes = readPackageRange(opened, mask.parts, mask.entry.offset, mask.entry.size);
+  assert.equal(maskBytes.readBigUInt64LE(140), 0n, 'Mask material requires runtime texture binding');
+  assert.notEqual(maskBytes.readUInt32LE(128), debugBytes.readUInt32LE(128));
   for (const picture of pictures) {
     const native = materials.get(picture);
     assert(native, 'Definition +176 has native material ' + picture);
@@ -54,14 +65,27 @@ try {
     const bytes = readPackageRange(opened, native.parts, native.entry.offset, native.entry.size);
     assert.equal(bytes.length, 160, 'Compiled native icon material layout');
     assert.equal(bytes.readUInt32LE(0), 0x120);
-    assert.equal(bytes.readUInt32LE(128), 0x3461ff0d, 'Native image shader, not debug text shader');
+    assert.equal(bytes.readUInt32LE(128), 0x3461ff0d, 'Native image material program');
+    assert.equal(bytes.readUInt32LE(128), maskBytes.readUInt32LE(128),
+      'Shared image program still needs native atlas/color setup');
     assert.notEqual(bytes.readUInt32LE(128), debugBytes.readUInt32LE(128));
     assert.equal(bytes.readUInt32LE(136), 0x3aa8b87e, 'Native diffuse binding');
     assert.equal(bytes.readBigUInt64LE(140).toString(16).padStart(16, '0'), picture,
       'Per-stratagem native material already binds its own texture');
   }
+  const queryFile = path.join(reference, 'icon-reference/texture.bin');
+  if (fs.existsSync(queryFile)) {
+    const query = fs.readFileSync(queryFile);
+    assert.equal(query.subarray(5, 8).toString('hex'), '488b05');
+    assert.equal(0x3438e0 + 12 + query.readInt32LE(8), 0x1a10238, 'Pinned EXE atlas resource root');
+    assert(query.includes(Buffer.from('498b80f8030000', 'hex')) ||
+      query.includes(Buffer.from('4c8b80f8030000', 'hex')), 'Native resource manager +0x3f8');
+    assert(query.includes(Buffer.from('498b80a0020000', 'hex')) ||
+      query.includes(Buffer.from('4d8b80a0020000', 'hex')) ||
+      query.includes(Buffer.from('4c8b80a0020000', 'hex')), 'Native atlas rows +0x2a0');
+  }
   console.log('PASS ' + definitions + ' nonzero native definitions / ' + pictures.size +
-    ' distinct icon materials; native shader and matching textures verified read-only');
+    ' distinct textures; native RGB-mask template, palette and atlas code verified read-only');
 } finally {
   for (const bundle of opened.values()) bundle.close();
 }

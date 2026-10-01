@@ -29,7 +29,7 @@ const large = pack.archive([pack.lua('test/large', 'x'.repeat(8192))]);
 checkMinimum(large);
 assert.equal(large.length, 192 + Math.ceil((8192 + 8) / 16) * 16);
 
-const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.10-test');
+const stage = path.resolve(__dirname, '../dist/HD2-Stratagem-Hotkeys-0.1.11-test');
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, 'manifest.json'), 'utf8'));
 const folders = [...new Set(manifest.Options.flatMap(option => option.Include))];
 const ids = new Set();
@@ -60,7 +60,7 @@ for (const folder of folders) {
     const source = archive.subarray(offset + 8, offset + size).toString('utf8');
     if (folder === 'Addon') {
       assert(source.startsWith('-- HD2-Addon: mods/hd2_helper/stratagem_hotkeys\n'));
-      assert(source.includes('BOOT 0.1.10-test'));
+      assert(source.includes('BOOT 0.1.11-test'));
       assert(source.includes('reader:game_menu()'));
       assert(source.includes('game-stratagem-menu-closed'));
       assert(source.includes('tostring(row.slot)'));
@@ -78,10 +78,18 @@ for (const folder of folders) {
       assert(!source.includes('option("f6"'));
       assert(!source.includes('-- @'));
       assert(source.includes('pcall(sr.Application.can_get, "material", material)'));
-      assert(source.includes('pcall(sr.Gui.bitmap, self.gui, data.material'));
+      assert(source.includes('sr.Gui.bitmap_uv(icon.gui, data.material'));
+      assert(source.includes('sr.Gui.material(icon.gui, data.material)'));
+      assert(source.includes('sr.Material.set_vector4(icon.material'));
+      assert(source.includes('sr.Vector4(c[1], c[2], c[3], c[4])'));
+      assert(source.includes('OVERLAY icon-source kind='));
+      assert(source.includes('exe + 0x1a10238'));
+      assert(source.includes('self:read(payload, 40) ~= raw'));
+      assert(source.includes('self:radial(include_shared, false)'));
       assert(source.includes('OVERLAY icon-fallback kind='));
       assert(source.includes('OVERLAY icons='));
-      assert(!/radial_icon_|create_material|set_resource_override|Material\.set_texture|sr\.Gui\.material/.test(source));
+      assert(!/radial_icon_|create_material|set_resource_override|WriteProcessMemory|VirtualProtect/.test(source));
+      assert(!source.includes('ccf39a02b444fa01'));
     } else {
       assert.equal(archive.length, 256);
       assert.equal(source, 'return true\n');

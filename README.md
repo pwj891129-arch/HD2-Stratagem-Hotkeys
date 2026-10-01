@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.10-test
+# HD2 Stratagem Hotkeys 0.1.11-test
 
 Hold your game-configured Stratagem List key, move toward an icon sector, then
 release the key to enter its command. F6 and Mouse Button 4 are no longer separate
@@ -8,7 +8,57 @@ the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
 
-## Native Icon Rendering Fix (0.1.10-test)
+## Atlas And RGB-mask Icons (0.1.11-test)
+
+The user's 0.1.10-test screenshot still had no visible icons despite
+`OVERLAY icons=10/10`. A bitmap ID proves allocation, not a visible image.
+The native tile renderer reads definition +176 as an image mask, +184 as a
+palette index, and applies three shader color vectors. The game's renderer
+also resolves the image's region in a texture atlas. Direct resource material
+calls did not reproduce that setup.
+
+This version reads the atlas map through ReadProcessMemory, without calling
+the engine's internal query functions or writing game memory. The hash-pinned
+EXE's query at +0x3438e0 follows root +0x1a10238, manager +0x3f8 and the map at
++0x2a0. It hashes the high resource word modulo capacity and follows bounded,
+24-byte chained entries. Payload +8 is the atlas texture; +24 is the four-float
+offset/scale. Offsets and sizes become opposite UV corners for
+[Gui.bitmap_uv](https://help.autodesk.com/cloudhelp/ENU/Stingray-Help/lua_ref/obj_stingray_Gui.html).
+Pointers, capacity/count, finite UVs and repeated snapshots are validated.
+Unreadable, changed, unmapped or malformed data falls back to the name.
+
+The existing native RGB-mask material `c0f3797849262087` is used only on
+isolated mod-owned GUIs. It receives the resolved atlas texture, exact region
+and raw color vectors from the five-entry native palette at +0x331b610 and the
+two constants at +0x21e89e0/+0x21e8a10. Vector4, not Color's ARGB constructor,
+preserves the shader's component order. GUI-local instances keep icons with
+different regions/colors independent even when they share one atlas. Hover
+redraws reuse bindings; closing or resource loss retires owned icon GUIs.
+No vanilla/HUD+ GUI or material is modified.
+
+Only the radial display requests this metadata. Command requests skip icon
+reads, and existing character-menu eligibility, numbering, key bindings and
+input sequencing stay unchanged. Labels still use the game's internal English
+development names; this release does not introduce a localization hook.
+`OVERLAY icon-source kind=... slot=... picture=... atlas=... uv=... name=...`
+records the actual binding. `OVERLAY icon-fallback ... reason=...` diagnoses
+missing metadata/API/resources or draw failures without per-frame spam.
+
+3,713 LuaJIT checks pass without OS input. Tests cover atlas hash collisions,
+invalid/cyclic chains, bounds, nonfinite/invalid regions, changing snapshots,
+raw palette order, shared atlases with independent regions/colors, binding and
+draw failures, retained redraws, owned-GUI cleanup and 1-16 image layouts at
+320x240, 1280x720 and 3840x2160. The optional native regression checks 130 nonzero
+definitions/110 textures, the RGB-mask material and native color/query code.
+The live process's atlas query code was captured read-only; the game exited
+before a live atlas-data snapshot could be captured. Actual rendering still
+requires an in-game test. No game functions were invoked during research.
+
+Replace this mod with 0.1.11-test while the game is closed, then Purge / Deploy
+in Arsenal. The Lua-only package includes no game icons, shaders, materials,
+fonts or binary GUI resources. Auto Reload 0.3.28-test remains unchanged.
+
+## Previous Direct-material Attempt (0.1.10-test)
 
 The user's 0.1.9-test log showed the menu opening with `OVERLAY icons=0/10`.
 Its generic image template, `ccf39a02b444fa01`, is actually the hash of
@@ -44,8 +94,8 @@ stale worlds and non-overlapping image bounds for 1-16 entries at 320x240,
 matching textures, and confirms the old template is a debug font material.
 Captured game references and game assets are excluded from source/releases.
 
-Actual game rendering still needs a user test. Replace this mod with
-0.1.10-test while the game is closed, then Purge / Deploy in Arsenal.
+This attempt was superseded by the atlas/RGB-mask path in 0.1.11-test after
+the user's in-game screenshot showed that allocating bitmaps was not enough.
 No icons, shaders, materials, font files or GUI binaries ship in this Lua-only
 release. Auto Reload 0.3.28-test and installed game files remain unchanged.
 
@@ -318,7 +368,7 @@ Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
 Run `node tools/native-icons.test.cjs` for the optional pinned-game material
 regression when local reference captures and game bundles are available.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.10-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.11-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 

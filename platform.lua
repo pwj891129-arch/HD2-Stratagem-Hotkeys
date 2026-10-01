@@ -95,6 +95,7 @@ function Platform.create(ffi)
     end
     return {
         base = tonumber(ffi.cast("uintptr_t", game)),
+        exe_base = tonumber(ffi.cast("uintptr_t", exe)),
         read = function(_, at, size)
             if type(at) ~= "number" or at < 65536 or at >= 140737488355328 or
                 size < 1 or size > 262144 then return nil end
