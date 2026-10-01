@@ -2,12 +2,12 @@ param(
     [Parameter(Mandatory)][string]$AssetPath,
     [Parameter(Mandatory)][string]$Commit,
     [string]$Repository = 'pwj891129-arch/HD2-Stratagem-Hotkeys',
-    [string]$Tag = 'stratagem-hotkeys-0.1.5-test'
+    [string]$Tag = 'stratagem-hotkeys-0.1.6-test'
 )
 $ErrorActionPreference = 'Stop'
 $AssetPath = (Resolve-Path -LiteralPath $AssetPath).Path
 $assetName = [IO.Path]::GetFileName($AssetPath)
-if ($assetName -ne 'HD2-Stratagem-Hotkeys-0.1.5-test.zip') { throw 'Unexpected addon package name.' }
+if ($assetName -ne 'HD2-Stratagem-Hotkeys-0.1.6-test.zip') { throw 'Unexpected addon package name.' }
 if ($Commit -notmatch '^[0-9a-f]{40}$') { throw 'A full source commit hash is required.' }
 if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Invalid repository name.' }
 $credentialLines = "protocol=https`nhost=github.com`n`n" | git -c "safe.directory=$PSScriptRoot" credential fill
@@ -22,19 +22,20 @@ $headers = @{ Authorization = 'Bearer ' + $credential['password']; Accept = 'app
     'User-Agent' = 'HD2-Helper-Addon-Release'; 'X-GitHub-Api-Version' = '2022-11-28' }
 $api = "https://api.github.com/repos/$Repository/releases"
 $notes = @'
-## HD2 Stratagem Hotkeys 0.1.5-test
+## HD2 Stratagem Hotkeys 0.1.6-test
 
-오버레이를 여는 코드의 화면 API 인자 오류와 시작 시 키 처리 문제를 수정했습니다.
+원형 메뉴는 표시되지만 커맨드가 작동하지 않는 문제를 조사하고, 선택 확정과 목록 재진입의 입력 순서를 수정했습니다.
 
-- 화면 크기 조회 함수에 GUI 객체를 전달하던 잘못된 호출을 제거했습니다. 메뉴를 열 때와 그릴 때 모두 인자 없이 화면 크기를 조회합니다.
-- 화면 크기를 먼저 검증하고 글꼴과 재질이 둘 다 준비된 경우에만 GUI를 생성합니다. 유효하지 않은 크기나 준비되지 않은 자원을 사용하지 않습니다.
-- 최초 그리기에 실패하면 메뉴를 닫고 마우스 커서 상태를 복원합니다.
-- 게임 시작이나 키 설정 변경 시 이미 눌려 있는 목록 키는 활성화 입력으로 처리하지 않습니다. 키를 한 번 놓고 다시 눌러야 합니다.
-- 오버레이 생성 단계를 로그에 기록하여 화면 크기 조회·GUI 생성·커서·그리기 중 어디에서 실패하는지 확인할 수 있게 했습니다.
-- 게임에 설정된 목록 열기 키를 누른 채 마우스로 방향을 고르고 키를 놓는 방식은 유지합니다. 커맨드만 자동으로 입력하며 조준·투척은 수동입니다.
-- 숫자열 1~4 조합키, 장착 목록 판독 수정과 옵션 패키지 최소 크기 규칙을 유지했습니다.
+- 키를 놓는 순간 마우스 위치를 다시 읽지 않고, 누르고 있는 동안 마지막으로 강조된 항목을 확정합니다. 키를 놓을 때 커서가 중앙으로 돌아가 선택이 사라지는 흐름을 방지했습니다.
+- 중앙 취소는 유지합니다. 키를 누른 채 중앙으로 이동한 뒤 놓으면 입력하지 않습니다.
+- 마우스 제어를 복원한 뒤 기존 게임 목록이 닫히고 안정되는 것을 확인하고 목록 키를 다시 누릅니다. 물리 키를 놓은 프레임에서 바로 다시 누르지 않습니다.
+- 목록 키를 새로 누른 후 게임 목록이 여러 프레임에 걸쳐 활성화된 것을 확인한 다음 방향키를 전송합니다.
+- 대기 중 장비·키 설정 변경, 새 목록 키 누름, 발사·채팅·포커스 상실이 발생하면 취소하고 모드가 누른 키를 해제합니다.
+- 선택 강조/확정/중앙 취소/사용 불가, 발사·채팅·포커스 취소, 목록 닫힘 대기, 목록 키 재입력 및 실제 방향키 값을 로그에 기록합니다.
+- 입력 완료는 `command-sent; game-result-unverified`로 기록합니다. OS 입력 전송 완료를 게임의 호출 성공으로 간주하지 않습니다.
+- 화면 API 수정, 안전한 옵션 패키지 크기, 게임 설정의 목록 키 및 숫자열 1~4 단축키를 유지했습니다. 조준·투척은 수동입니다.
 
-0.1.4-test 로그는 모드 초기화·키 인식을 통과한 뒤 오버레이를 여는 과정에서 중단됐습니다. 새 충돌 덤프는 기존 작은 옵션 파일 문제와 다른 위치를 가리킵니다. 화면 API의 잘못된 호출은 확인했지만, 덤프만으로 해당 호출이 유일한 충돌 원인이라고 단정하지 않습니다. 실제 게임 시작과 오버레이 표시를 다시 확인해야 합니다.
+0.1.5-test에서 인터페이스 표시는 사용자 테스트로 확인됐습니다. 로그에는 메뉴 열림 33회, 커맨드 전송 기록 2회와 목록 활성화 대기 실패 1회가 있었습니다. 이번 수정의 선택 보존과 입력 순서는 오프라인에서 검사했으며, 실제 게임에서 커맨드가 받아들여지는지는 새 빌드로 확인해야 합니다.
 
 ### 설치
 
@@ -43,13 +44,13 @@ $notes = @'
 자동재장전은 기존 HD2 Auto Reload 0.3.27-test 이상을 유지하면 됩니다. 이번 수정으로 자동재장전 모드를 교체할 필요는 없습니다. 헬퍼의 동일 기능을 동시에 켜지 마세요.
 로그: `%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\hd2_helper_stratagem_hotkeys.log`
 
-435개 LuaJIT 기능 검사와 최소 크기·Lua-only 패키지 검사를 통과했습니다. 화면 함수가 GUI 객체를 받으면 실패하도록 테스트도 강화했습니다. 실제 오버레이 동작은 인게임 검증이 필요합니다. 이름은 게임의 디버그 명칭을 사용합니다. 설치된 게임 모드 파일을 자동 변경하거나 게임에 입력을 보내지 않았습니다.
+463개 LuaJIT 기능 검사와 최소 크기·Lua-only 패키지 검사를 통과했습니다. 키를 놓을 때 커서가 중앙으로 돌아가는 상황, 목록 닫힘 지연, 일시적인 목록 활성화, 대기 중 장비/키 설정 변경과 포커스 상실, 좌클릭 취소를 검사했습니다. 실제 커맨드 수신은 인게임 검증이 필요합니다. 설치된 게임 모드 파일을 자동 변경하거나 게임에 입력을 보내지 않았습니다.
 '@
 try {
     $releases = Invoke-RestMethod -Uri ($api + '?per_page=100') -Headers $headers
     $release = $releases | Where-Object tag_name -eq $Tag | Select-Object -First 1
     if (-not $release) {
-        $body = @{ tag_name = $Tag; target_commitish = $Commit; name = 'HD2 Stratagem Hotkeys 0.1.5-test (overlay native API fix)';
+        $body = @{ tag_name = $Tag; target_commitish = $Commit; name = 'HD2 Stratagem Hotkeys 0.1.6-test (radial command dispatch fix)';
             body = $notes; draft = $true; prerelease = $true } | ConvertTo-Json
         $release = Invoke-RestMethod -Method Post -Uri $api -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
     }

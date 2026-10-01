@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.5-test lua-only; platform-init")
+log("BOOT 0.1.6-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -41,9 +41,9 @@ local config = {radial = option("radial", false), hotkeys = option("hotkeys", tr
 local reader, policy = Reader.new(channel), Policy.new(channel.key)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale, log)
-local state = {version = "0.1.5-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.6-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.5-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("START 0.1.6-test; Arsenal-only options; list-key radial; command only; no automatic throw")
 log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
 local function note(reason)
     if reason ~= state.reason then log(reason); state.reason = reason end
@@ -60,6 +60,7 @@ local function stop()
     policy:cancel()
     state.pending = nil
     state.radial_binding = nil
+    state.highlight = nil
     local good, why = pcall(radial.close, radial)
     state.release_due = 0
     release_start()
@@ -117,8 +118,13 @@ local function tick()
     state.keys = numbers
     local allowed = focused and binding and not state.chat and not escape and not enter and not fire and reader:idle()
     if not allowed then
+        local was_open, was_pending = radial.opened, state.pending ~= nil
         stop()
-        if overlay_pressed then note("OVERLAY blocked focus-chat-menu-or-fire") end
+        if overlay_pressed or was_open or was_pending then
+            local why = not focused and "focus-lost" or not binding and "binding-unavailable" or
+                (state.chat or enter) and "chat" or escape and "escape" or fire and "fire" or "game-menu"
+            note((was_open and "OVERLAY cancelled " or was_pending and "INPUT cancelled " or "OVERLAY blocked ") .. why)
+        end
         state.blocking_inputs = focused and modifier
         return
     end
@@ -137,6 +143,7 @@ local function tick()
             local opened; opened, why = radial:open(inventory)
             if opened then
                 state.radial_binding, state.radial_read_due = binding, now + 0.05
+                state.highlight = nil
                 log("OVERLAY opened rows=" .. #inventory.rows)
             end
         end
@@ -151,37 +158,75 @@ local function tick()
                 stop(); note("OVERLAY cancelled loadout-or-state-changed")
             else radial.inventory, state.radial_read_due = current, now + 0.05 end
         end
-        if radial.opened and not radial:draw(radial.inventory) then
-            stop(); note("OVERLAY cancelled surface-unavailable")
-        elseif radial.opened and overlay_released then
+        if radial.opened and overlay_released then
+            -- The game can recenter the cursor on key-up; keep the last held-frame selection.
             local row = radial.selected and radial.inventory.rows[radial.selected]
             radial:close()
             state.radial_binding = nil
+            state.highlight = nil
             if row and row.ready then
+                log("OVERLAY selected kind=" .. row.kind)
                 local request, why = reader:request_kind(row.kind, config.shared)
                 if request and clean(request) and same_binding(binding, request.bindings) then
-                    if modifier or channel.key(binding.start_vk, true) then
-                        if not modifier then state.owned_start = binding.start_vk end
-                        state.pending = {kind = row.kind, token = request.token, due = now + 0.05, expires = now + 0.5}
-                    else note("SKIP stratagem-start-key-failed") end
+                    state.pending = {kind = row.kind, token = request.token, bindings = request.bindings, stage = "release",
+                        due = now + 0.03, expires = now + 0.75}
+                    log("INPUT waiting-list-close kind=" .. row.kind)
                 else note("SKIP " .. (why or "direction-held-or-binding-changed")) end
-            end
+            else note(row and ("OVERLAY cancelled unavailable kind=" .. row.kind .. " status=" .. row.status) or
+                "OVERLAY cancelled center-or-no-selection") end
+        elseif radial.opened and not radial:draw(radial.inventory) then
+            stop(); note("OVERLAY cancelled surface-unavailable")
+        elseif radial.opened and radial.selected ~= state.highlight then
+            state.highlight = radial.selected
+            local row = radial.selected and radial.inventory.rows[radial.selected]
+            log(row and ("OVERLAY highlight kind=" .. row.kind) or "OVERLAY highlight center")
         end
     end
     if state.pending and now >= state.pending.due then
         local pending = state.pending
-        if now > pending.expires or (not modifier and not state.owned_start) then
+        if now > pending.expires then
+            stop(); note(pending.stage == "release" and "SKIP list-close-timeout" or "SKIP stratagem-menu-not-active")
+        elseif pending.bindings and not same_binding(binding, pending.bindings) then
+            stop(); note("SKIP binding-changed")
+        elseif pending.stage == "release" then
+            if modifier then
+                stop(); note("SKIP list-key-pressed-again")
+            elseif radial.mouse or reader:menu_active() then
+                pending.settled = nil
+            elseif not pending.settled then
+                pending.settled = now + 0.03
+            elseif now >= pending.settled then
+                local request, why = reader:request_kind(pending.kind, config.shared)
+                if request and request.token == pending.token and clean(request) and
+                    same_binding(binding, request.bindings) then
+                    if channel.key(binding.start_vk, true) then
+                        state.owned_start = binding.start_vk
+                        pending.stage, pending.due, pending.expires = "menu", now + 0.05, now + 0.5
+                        log("INPUT list-key-acquired vk=" .. binding.start_vk)
+                    else stop(); note("SKIP stratagem-start-key-failed") end
+                else stop(); note("SKIP " .. (why or "loadout-binding-or-direction-changed")) end
+            end
+        elseif not modifier and not state.owned_start then
             stop(); note("SKIP stratagem-menu-not-active")
         elseif reader:menu_active() then
-            state.pending = nil
-            local request, why
-            if pending.kind then request, why = reader:request_kind(pending.kind, config.shared)
-            else request, why = reader:request(pending.slot) end
-            if request and (not pending.token or pending.token == request.token) and
-                clean(request) and same_binding(binding, request.bindings) then
-                policy:start(request, now)
-                log("COMMAND kind=" .. request.kind .. " steps=" .. #request.keys)
-            else release_start(); note("SKIP " .. (why or "loadout-binding-or-direction-changed")) end
+            if pending.stage == "menu" and not pending.menu_ready then
+                pending.menu_ready = now + 0.015
+            elseif not pending.menu_ready or now >= pending.menu_ready then
+                state.pending = nil
+                local request, why
+                if pending.kind then request, why = reader:request_kind(pending.kind, config.shared)
+                else request, why = reader:request(pending.slot) end
+                if request and (not pending.token or pending.token == request.token) and
+                    clean(request) and same_binding(binding, request.bindings) then
+                    local started; started, why = policy:start(request, now)
+                    if started then
+                        log("COMMAND kind=" .. request.kind .. " steps=" .. #request.keys ..
+                            " keys=" .. table.concat(request.keys, ",") .. " list_vk=" .. binding.start_vk)
+                    else release_start(); note("SKIP " .. why) end
+                else release_start(); note("SKIP " .. (why or "loadout-binding-or-direction-changed")) end
+            end
+        else
+            pending.menu_ready = nil
         end
     end
     if policy.job then
@@ -191,7 +236,7 @@ local function tick()
             same_binding(binding, request.bindings) and reader:menu_active()
         local result = policy:step(now, same)
         if result then
-            log(result)
+            log(result == "command-complete" and "command-sent; game-result-unverified" or result)
             if not policy.job then state.release_due = now + 0.03 end
         end
     end

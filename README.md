@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.5-test
+# HD2 Stratagem Hotkeys 0.1.6-test
 
 Hold your game-configured Stratagem List key, move toward a named sector, then
 release the key to enter its command. F6 and Mouse Button 4 are no longer separate
@@ -7,6 +7,43 @@ Release in the center to cancel. Aim and throw manually. The radial menu reads
 the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## Release Selection And Command Dispatch
+
+The user confirmed that 0.1.5-test displays the interface, but reported that the
+game does not execute its commands. The log has 33 menu openings, only two
+`COMMAND` records and one menu-activation timeout. A completed input sequence is
+not proof that the game accepted it.
+
+The old release path drew the radial again before confirming the selection. If
+the game recenters its cursor on key-up, that draw replaces the last highlighted
+row with the center/dead-zone result. The new path commits the last held-frame
+highlight without querying the release-frame cursor. Moving to the center while
+still holding the key continues to cancel normally.
+
+Previously, cursor capture was restored and the list key was reacquired during
+the same update as physical release. Dispatch now waits at least 30 ms, observes
+the old game list closed for another 30 ms, then presses the saved list key.
+Directions wait at least 50 ms and a further active-menu observation 15 ms later
+before the sequence starts. Timeout, a new physical list press, changed bindings
+or loadout, fire, chat and focus loss cancel the queued choice. Owned keys are
+released on cancellation. Menu waits have deadlines; there is no busy wait.
+
+`OVERLAY highlight`, `OVERLAY selected`, center/unavailable cancellation, `INPUT waiting-list-close`,
+`INPUT list-key-acquired` and the actual direction key values now distinguish
+selection, activation and delivery failures. Successful OS input completion is
+logged as `command-sent; game-result-unverified`, not confirmed ball preparation.
+Fire, chat, game-menu and focus cancellation reasons are logged even when the
+menu was already open. Left click remains a fire/cancel action, not confirmation;
+select by highlighting while holding the list key and then releasing that key.
+The regular List + number shortcut retains its existing held-key flow.
+
+463 LuaJIT checks pass, including release-frame cursor recentering, delayed menu
+closure, transient menu activation, loadout/binding changes, a second physical
+press and focus loss after reacquisition. These prove the revised sequencing
+offline; actual game acceptance still needs another user test. Replace this mod
+with 0.1.6-test while the game is closed, then Purge / Deploy in Arsenal.
+Auto Reload 0.3.27-test can stay installed unchanged.
 
 ## Overlay Native API Fix
 
@@ -33,9 +70,8 @@ before a fresh press can activate either the radial or the number shortcut.
 The strict GUI mock rejects arguments to `Gui.resolution`, checks the screen-GUI
 scale and text resource contracts, and covers invalid dimensions, missing
 material, first-draw failure, resource loss and held startup/rebound keys.
-435 LuaJIT checks pass offline. This fixes the confirmed bad call, but successful
-startup and overlay rendering still need a user test in the actual game.
-Replace only this mod with 0.1.5-test, with the game closed, then Purge / Deploy.
+That build passed 435 LuaJIT checks offline. The user subsequently confirmed
+that its interface appears; the command-delivery fix is described above.
 Auto Reload 0.3.27-test does not need a new build for this GUI fix.
 
 ## List-Key Overlay And Loadout Fix
@@ -153,7 +189,9 @@ The addon does not bypass cooldowns, ammunition, jammers or game restrictions.
 Game memory is read only; only normal keyboard input is generated. No mouse throw is generated.
 
 Log: `%LOCALAPPDATA%/CowboyBingus/Helldivers2/Logs/hd2_helper_stratagem_hotkeys.log`.
-Look for `OVERLAY opened rows=...` and `COMMAND kind=...`, then `command-complete`.
+Look for `OVERLAY selected kind=...`, `INPUT list-key-acquired` and `COMMAND kind=...`,
+then `command-sent; game-result-unverified`. This last message confirms only the
+OS input sequence, not the game's response.
 `SKIP` / `WAIT` record a refused input and its reason.
 
 ## Build
@@ -161,7 +199,7 @@ Look for `OVERLAY opened rows=...` and `COMMAND kind=...`, then `command-complet
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
 Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.5-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.6-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 

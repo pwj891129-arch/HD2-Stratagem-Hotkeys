@@ -122,6 +122,7 @@ return function(equal, read_file, source)
 
     -- Actual addon sequencing with GUI/cursor and keyboard adapters; no OS input.
     local current, held, events, ready, token, focused, idle, menu = 0, {}, {}, true, "TOKEN", true, true, true
+    local menu_override, hover = nil, 1
     local options = {radial = true}
     local binding = {start_vk = 164, directions = {38, 39, 40, 37}}
     local fake = {base = 1, foreground = function() return focused end,
@@ -129,7 +130,10 @@ return function(equal, read_file, source)
         key = function(vk, down) events[#events + 1] = {vk, down}; held[vk] = down; return true end}
     local request = function() if ready then return {token = token, kind = 1, keys = {38, 39}, bindings = binding} end end
     local fake_reader = {bindings = function() return binding, "ready" end,
-        idle = function() return idle end, menu_active = function() return menu end,
+        idle = function() return idle end, menu_active = function()
+            if menu_override ~= nil then return menu_override end
+            return menu and held[binding.start_vk] == true
+        end,
         loadout = function() return {token = token} end,
         request = request, request_kind = request,
         radial = function() return {token = token, rows = {{kind = 1, ready = ready, status = "READY"}}}, "ready" end}
@@ -140,10 +144,14 @@ return function(equal, read_file, source)
         opened_count = opened_count + 1
         return true
     end
-    function mock_radial:draw() self.selected = 1; return true end
+    function mock_radial:draw() self.selected = hover; return true end
     function mock_radial:close() self.opened, self.selected, self.inventory = false, nil, nil end
+    local messages = {}
     local env = setmetatable({fake = fake, fake_reader = fake_reader}, {__index = _G}); env._G = env
-    env.CowboyBingusModLoader = {api = 1}
+    env.CowboyBingusModLoader = {api = 1, open_log = function()
+        return {write = function(_, line) messages[#messages + 1] = line end,
+            flush = function() end, close = function() end}
+    end}
     env.require = function(name)
         local option = name:match("stratagem_option_(.+)$")
         if option then return options[option] end
@@ -240,5 +248,96 @@ return function(equal, read_file, source)
     equal(mock_radial.opened, true, "released rebound key can open normally")
     held[162] = false; step(0.02); finish()
     equal(#events, 6, "fresh rebound hold-release inputs exactly one command")
+    env.shutdown()
+
+    local function restart()
+        env.update, env.shutdown, env.HD2StratagemHotkeys = nil, nil, nil
+        held, events, opened_count, messages = {}, {}, 0, {}
+        menu_override, hover, focused, idle, menu, ready = nil, 1, true, true, true, true
+        binding = {start_vk = 164, directions = {38, 39, 40, 37}}
+        init(); step(0)
+    end
+    restart()
+    held[164] = true; step(0.02)
+    equal(mock_radial.selected, 1, "held frame highlights desired row")
+    hover, held[164], menu_override = nil, false, true
+    step(0.02)
+    equal(env.HD2StratagemHotkeys.pending.kind, 1, "key-up recenter cannot erase last highlighted row")
+    equal(mock_radial.opened, false, "restore capture before reacquiring the list key")
+    for index = 1, 5 do step(0.02) end
+    equal(#events, 0, "never inject a new list press while the old menu is still open")
+    menu_override = false
+    step(0.02); step(0.02)
+    equal(#events, 0, "menu closure settles across frames before reacquisition")
+    step(0.02)
+    equal(#events, 1, "fresh list key press after stable closure")
+    equal(events[1][1], 164); equal(events[1][2], true)
+    for index = 1, 5 do step(0.02) end
+    equal(#events, 1, "no directions before the reopened menu is active")
+    menu_override = true; step(0.02)
+    equal(#events, 1, "menu activation must be observed across frames")
+    menu_override = false; step(0.02)
+    equal(env.HD2StratagemHotkeys.pending.menu_ready, nil, "transient menu activation is not enough")
+    menu_override = true; finish()
+    equal(#events, 6, "stable reopened menu receives directions and one list release")
+    equal(opened_count, 1, "injected reacquisition does not reopen the radial")
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    hover = nil; step(0.02)
+    held[164] = false; step(0.02); finish()
+    equal(#events, 0, "moving to center while holding still cancels deliberately")
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    held[164], menu_override = false, true; step(0.02); finish(); finish()
+    equal(#events, 0, "old menu never closing times out without any injected input")
+    equal(env.HD2StratagemHotkeys.pending, nil)
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    held[164] = false; step(0.02)
+    token = "REPLACED-BEFORE-REACQUIRE"; finish()
+    equal(#events, 0, "loadout change while closing the menu cancels without injecting list key")
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    held[164] = false; step(0.02)
+    held[164] = true; step(0.06); held[164] = false; finish()
+    equal(#events, 0, "a second physical list press cancels the queued radial choice")
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    held[164], menu_override = false, true; step(0.02)
+    binding = {start_vk = 162, directions = {38, 39, 40, 37}}
+    step(0.3)
+    equal(#events, 0, "binding change while waiting for close never presses a different list key")
+    equal(env.HD2StratagemHotkeys.pending, nil)
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    held[164] = false; step(0.02)
+    menu_override = false
+    for index = 1, 4 do step(0.02) end
+    equal(#events, 1, "pending command owns the reacquired list key")
+    focused = false; step(0.02)
+    equal(#events, 2, "focus loss releases the reacquired list key before any directions")
+    equal(events[2][1], 164); equal(events[2][2], false)
+    equal(env.HD2StratagemHotkeys.pending, nil)
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    held[1] = true; step(0.02)
+    equal(mock_radial.opened, false, "left click remains fire/cancel rather than radial confirmation")
+    equal(messages[#messages], "OVERLAY cancelled fire\n", "fire cancellation after opening is diagnosed")
+    held[1], held[164] = false, false; step(0.02); finish()
+    equal(#events, 0, "release after a fire-cancelled menu never inputs a command")
     env.shutdown()
 end
