@@ -2,12 +2,12 @@ param(
     [Parameter(Mandatory)][string]$AssetPath,
     [Parameter(Mandatory)][string]$Commit,
     [string]$Repository = 'pwj891129-arch/HD2-Stratagem-Hotkeys',
-    [string]$Tag = 'stratagem-hotkeys-0.1.7-test'
+    [string]$Tag = 'stratagem-hotkeys-0.1.8-test'
 )
 $ErrorActionPreference = 'Stop'
 $AssetPath = (Resolve-Path -LiteralPath $AssetPath).Path
 $assetName = [IO.Path]::GetFileName($AssetPath)
-if ($assetName -ne 'HD2-Stratagem-Hotkeys-0.1.7-test.zip') { throw 'Unexpected addon package name.' }
+if ($assetName -ne 'HD2-Stratagem-Hotkeys-0.1.8-test.zip') { throw 'Unexpected addon package name.' }
 if ($Commit -notmatch '^[0-9a-f]{40}$') { throw 'A full source commit hash is required.' }
 if ($Repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$') { throw 'Invalid repository name.' }
 $credentialLines = "protocol=https`nhost=github.com`n`n" | git -c "safe.directory=$PSScriptRoot" credential fill
@@ -22,19 +22,19 @@ $headers = @{ Authorization = 'Bearer ' + $credential['password']; Accept = 'app
     'User-Agent' = 'HD2-Helper-Addon-Release'; 'X-GitHub-Api-Version' = '2022-11-28' }
 $api = "https://api.github.com/repos/$Repository/releases"
 $notes = @'
-## HD2 Stratagem Hotkeys 0.1.7-test
+## HD2 Stratagem Hotkeys 0.1.8-test
 
-수동 Alt + 방향키 입력은 정상인데 모드의 자동 커맨드는 작동하지 않는 문제를 대상으로, 방향키 전송 경로와 게임 입력 확인 과정을 변경한 테스트 빌드입니다. 실제 원인과 인게임 작동 여부는 새 빌드로 확인해야 합니다.
+캐릭터의 실제 스트라타젬 메뉴 활성 상태로 원형 오버레이를 제한하고, 원형 메뉴의 번호를 개인 장착 슬롯 핫키와 맞춘 테스트 빌드입니다.
 
-- 목록 열기 키의 기존 전송 방식은 유지하고, 커맨드 방향키는 게임 설정에서 읽은 가상 키값으로 명시적으로 전송합니다. 방향키·숫자패드·숫자열을 구분하며 WASD로 강제하지 않습니다.
-- 방향키를 보낸 뒤 게임 내부에서 해당 방향 입력이 감지된 것을 확인해야 다음 키로 넘어갑니다. Windows 전송 성공만으로 완료 처리하지 않습니다.
-- 같은 방향을 연속 입력할 때 이전 입력 상태가 해제된 것을 확인하고 다시 누릅니다. 한 프레임만 감지되는 입력도 보존합니다.
-- 누르기/떼기의 기존 최소 15ms 또는 30ms 설정을 유지합니다. 입력 감지나 해제 확인이 250ms 안에 되지 않으면 나머지 키를 보내지 않고 중단합니다. 불확실한 커맨드를 자동 재전송하지 않습니다.
-- 게임 입력 객체 교체, 다른 방향 입력 충돌, 읽기 실패, 장비/키 설정 변경, 발사·채팅·포커스 상실 시 취소하고 모드가 누른 키를 해제합니다.
-- 각 방향의 게임 감지와 실패한 단계·방향·실제 키값을 로그에 기록합니다. `command-input-observed; game-result-unverified`는 방향 입력이 감지됐다는 뜻이며 실제 호출 성공을 뜻하지 않습니다.
-- 원형 메뉴의 선택 보존, 목록 닫힘 대기, 목록 키 재진입, 숫자열 1~4 단축키와 안전한 Lua-only 패키지를 유지했습니다. 조준·투척은 수동입니다.
+- 목록 열기 키를 눌렀다는 사실만으로 오버레이를 열지 않습니다. 캐릭터의 실제 게임 메뉴가 활성화된 것을 확인한 뒤 표시합니다.
+- 게임 메뉴 활성화 확인은 최대 350ms만 기다립니다. 확인되지 않거나 읽을 수 없으면 원형 메뉴와 마우스 제어를 활성화하지 않습니다.
+- 키를 누르는 중 실제 메뉴가 닫히거나 캐릭터가 교체되면 선택을 취소합니다. 입력 중에도 메뉴 비활성화·캐릭터 변경이 확인되면 남은 커맨드를 중단하고 모드가 누른 키를 해제합니다.
+- 정상적으로 목록 키를 놓을 때는 마지막 선택을 유지합니다. 실제 메뉴 닫힘과 재활성화를 확인한 뒤 커맨드를 전송합니다.
+- 숫자열 1~4 핫키는 개인 장착 슬롯 1~4와 매칭됩니다. 공용/임무 항목이 섞여도 원형 메뉴의 개인 번호는 변하지 않습니다.
+- 공용/임무 스트라타젬에는 숫자 핫키 번호를 표시하지 않습니다. 사용 가능 상태일 때 원형 메뉴에서 마우스로 선택할 수 있습니다.
+- 숫자 핫키도 실제 캐릭터 메뉴가 활성화된 경우에만 방향 커맨드를 보냅니다. 기존 게임 설정 키 매핑, 방향 입력 감지 확인, 15/30ms 설정과 조준·투척 수동 방식을 유지합니다.
 
-기존 로그에는 방향키 값 37·38·39·40의 Windows 전송 기록이 있었습니다. 이 기록만으로 게임 수신을 확정할 수 없어 전송 호환성 변경과 읽기 전용 게임 입력 확인을 함께 적용했습니다. 실제 게임 메모리를 변경하거나 내부 입력 함수를 직접 호출하지 않습니다.
+고정 해시로 검증하는 게임 버전의 실제 메뉴 활성 조회 코드를 확인해 읽기 전용 판독에 연결했습니다. 게임의 사용 가능 조건을 임의로 재현하거나 내부 함수를 호출하지 않습니다. 실제 커맨드 호출 성공은 별도 인게임 확인이 필요합니다.
 
 ### 설치
 
@@ -43,13 +43,13 @@ $notes = @'
 자동재장전은 기존 HD2 Auto Reload 0.3.28-test를 유지하면 됩니다. 이번 수정으로 자동재장전 모드를 교체할 필요는 없습니다. 헬퍼의 동일 기능을 동시에 켜지 마세요.
 로그: `%LOCALAPPDATA%\CowboyBingus\Helldivers2\Logs\hd2_helper_stratagem_hotkeys.log`
 
-624개 LuaJIT 검사와 최소 크기·Lua-only 패키지 검사를 통과했습니다. Windows 입력 필드, 입력 지연/누락/한 프레임 감지, 같은 방향 반복, 30FPS의 12단계 입력, 키 해제 실패, 게임 입력 객체 교체와 기존 안전 취소를 검사했습니다. 실제 커맨드 수신은 인게임 검증이 필요합니다. 설치된 게임 모드 파일을 자동 변경하거나 게임에 입력을 보내지 않았습니다.
+903개 LuaJIT 검사와 최소 크기·Lua-only 패키지 검사를 통과했습니다. 공용 항목이 섞인 번호 매칭, 실제 메뉴가 비활성인데 Alt 입력만 있는 상태, 지연 활성화, 시간 제한, 캐릭터 없음/교체, 입력 중 메뉴 닫힘과 기존 입력 경로를 모의 검사했습니다. 메뉴 상태의 실제 게임 판독 및 커맨드 수신은 인게임 검증이 필요합니다. 설치된 게임 모드 파일을 자동 변경하거나 게임에 입력을 보내지 않았습니다.
 '@
 try {
     $releases = Invoke-RestMethod -Uri ($api + '?per_page=100') -Headers $headers
     $release = $releases | Where-Object tag_name -eq $Tag | Select-Object -First 1
     if (-not $release) {
-        $body = @{ tag_name = $Tag; target_commitish = $Commit; name = 'HD2 Stratagem Hotkeys 0.1.7-test (direction input and game observation)';
+        $body = @{ tag_name = $Tag; target_commitish = $Commit; name = 'HD2 Stratagem Hotkeys 0.1.8-test (native menu gate and slot numbers)';
             body = $notes; draft = $true; prerelease = $true } | ConvertTo-Json
         $release = Invoke-RestMethod -Method Post -Uri $api -Headers $headers -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
     }

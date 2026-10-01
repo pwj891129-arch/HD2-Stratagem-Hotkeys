@@ -132,7 +132,7 @@ function Radial:draw(inventory)
     self.selected = Radial.pick(nx, ny, w, h, #rows, scale)
     local mark = {tostring(self.selected), tostring(w), tostring(h)}
     for _, row in ipairs(rows) do
-        mark[#mark + 1] = row.kind .. ":" .. row.status .. ":" .. tostring(row.name)
+        mark[#mark + 1] = row.kind .. ":" .. row.status .. ":" .. tostring(row.name) .. ":" .. tostring(row.slot)
     end
     local signature = table.concat(mark, "|")
     if signature == self.signature then return true end
@@ -155,7 +155,7 @@ function Radial:draw(inventory)
         local ink = row.ready and sr.Color(255, 255, 255, 240) or sr.Color(190, 125, 128, 130)
         local label_width = math.min(210 * scale, 2 * radius * math.sin(math.pi / math.max(2, #rows)) - 16 * scale)
         self:text(row.name or ("STRATAGEM " .. row.kind), x, y - 7 * scale, 16 * scale, ink, label_width)
-        self:text(tostring(index), x, y + 37 * scale, 18 * scale, ink)
+        if row.slot then self:text(tostring(row.slot), x, y + 37 * scale, 18 * scale, ink) end
         self:text(row.status, x, y - 50 * scale, 16 * scale, ink)
     end
     if self.selected then

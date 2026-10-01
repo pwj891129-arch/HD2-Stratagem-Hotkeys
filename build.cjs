@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
-const version = '0.1.7-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
+const version = '0.1.8-test', resource = 'mods/hd2_helper/stratagem_hotkeys';
 const luaType = 0xa14e8dfa2cd117e2n;
 function hash64(value) {
   const data = Buffer.from(value), mix = 0xc6a4a7935bd1e995n, mask = 0xffffffffffffffffn;
@@ -57,13 +57,13 @@ for (const [suffix, data] of [['', archive], ['.stream', Buffer.alloc(0)], ['.gp
 }
 const manifest = {Version: 1, Guid: '258a0830-aa77-402e-b899-6652f0297ef1',
   Name: `HD2 Stratagem Hotkeys ${version}`, Author: 'HD2 Helper',
-  Description: 'Hold the game-configured Stratagem List key for the text radial; release to enter its command. Directions use saved virtual keys and wait for native game input observation before advancing. Missing input cancels without blind retries. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
+  Description: 'Hold the game-configured Stratagem List key for the text radial only after the character\'s native stratagem menu activates. Personal numbers match equipped hotkey slots 1-4; shared entries have no number hotkey. Native menu loss cancels selection/input. Directions wait for game input observation. Arsenal-only settings. Requires Bingus Shared Loader v18 / API 1.',
   Options: []};
 const pack = require('./tools/package.cjs');
 const options = [
-  ['radial', '원형 오버레이 ON/OFF', '게임에 설정된 스트라타젬 목록 열기 키를 누른 채 마우스로 방향을 고른 뒤 키를 놓으면 커맨드를 입력합니다. 아이콘 대신 이름/상태를 표시합니다. 조준/투척은 수동입니다.', ['Addon']],
-  ['hotkeys', 'Stratagem Hotkeys', '목록 열기 키 + 숫자열 1~4 커맨드 입력 ON/OFF.', ['Addon']],
-  ['shared', '공용/임무 스트라타젬 표시', '체크하면 게임에서 제공한 공용/임무 스트라타젬도 원형 메뉴에 포함합니다. 미체크시 장착 4개만 표시.', []],
+  ['radial', '원형 오버레이 ON/OFF', '캐릭터의 실제 스트라타젬 메뉴가 활성화된 경우에만 원형 메뉴를 표시합니다. 목록 열기 키를 누른 채 마우스로 고른 뒤 놓으면 커맨드를 입력합니다. 조준/투척은 수동입니다.', ['Addon']],
+  ['hotkeys', 'Stratagem Hotkeys', '목록 열기 키 + 숫자열 1~4로 개인 장착 슬롯 커맨드를 입력합니다. 원형 메뉴에 표시된 개인 슬롯 번호와 매칭됩니다.', ['Addon']],
+  ['shared', '공용/임무 스트라타젬 표시', '체크하면 공용/임무 스트라타젬도 원형 메뉴에 포함합니다. 개인 슬롯 번호 1~4는 유지하며 공용 항목에는 숫자 핫키를 표시하지 않습니다.', []],
   ['large', '큰 원형 메뉴', '체크하면 130%, 미체크하면 100% 크기입니다.', []],
   ['slow', '커맨드 입력: 30ms', '체크하면 누르기/떼기 최소 30ms, 미체크하면 15ms. 게임의 방향 입력 감지를 확인한 뒤 다음 키를 전송합니다.', []],
 ];

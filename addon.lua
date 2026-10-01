@@ -19,7 +19,7 @@ pcall(function() file = loader.open_log("hd2_helper_stratagem_hotkeys.log") end)
 local function log(line)
     if file then pcall(function() file:write(tostring(line) .. "\n"); file:flush() end) end
 end
-log("BOOT 0.1.7-test lua-only; platform-init")
+log("BOOT 0.1.8-test lua-only; platform-init")
 local ok, channel = pcall(function() return Platform.create(require("ffi")) end)
 if not ok then log("DISABLED " .. tostring(channel)); return end
 log("BOOT platform-ready")
@@ -42,9 +42,9 @@ local reader = Reader.new(channel)
 local policy = Policy.new(channel.command_key, function(binding) return reader:command_state(binding) end)
 policy.delay = config.delay
 local radial = Radial.new(sr, channel, config.scale, log)
-local state = {version = "0.1.7-test", keys = {}, blocking_inputs = false, config = config}
+local state = {version = "0.1.8-test", keys = {}, blocking_inputs = false, config = config}
 rawset(_G, "HD2StratagemHotkeys", state)
-log("START 0.1.7-test; Arsenal-only options; list-key radial; command only; no automatic throw")
+log("START 0.1.8-test; Arsenal-only options; list-key radial; command only; no automatic throw")
 log("INPUT direction-mode=virtual-key; game-action-observation=required")
 log("CONFIG radial=" .. tostring(config.radial) .. " hotkeys=" .. tostring(config.hotkeys))
 local function note(reason)
@@ -61,7 +61,9 @@ end
 local function stop()
     policy:cancel()
     state.pending = nil
+    state.open_pending = nil
     state.radial_binding = nil
+    state.radial_menu_token = nil
     state.highlight = nil
     local good, why = pcall(radial.close, radial)
     state.release_due = 0
@@ -120,7 +122,7 @@ local function tick()
     state.keys = numbers
     local allowed = focused and binding and not state.chat and not escape and not enter and not fire and reader:idle()
     if not allowed then
-        local was_open, was_pending = radial.opened, state.pending ~= nil
+        local was_open, was_pending = radial.opened, state.pending ~= nil or state.open_pending ~= nil
         stop()
         if overlay_pressed or was_open or was_pending then
             local why = not focused and "focus-lost" or not binding and "binding-unavailable" or
@@ -130,29 +132,59 @@ local function tick()
         state.blocking_inputs = focused and modifier
         return
     end
+    local game, game_why
+    if modifier or radial.opened or state.pending or policy.job then game, game_why = reader:game_menu() end
+    local native_active = game and game.active == true
     -- Number shortcuts take priority over the radial on the same list-key hold.
     local shortcut = config.hotkeys and state.list_ready and modifier and pressed and count == 1 and
         not policy.job and not state.pending and not state.owned_start
-    if shortcut then
+    if shortcut and game then
         radial:close()
+        state.open_pending = nil
         state.radial_binding = nil
-        state.pending = {slot = pressed, due = now + 0.05, expires = now + 0.35}
+        state.radial_menu_token = nil
+        state.pending = {slot = pressed, menu_token = game.token, bindings = binding,
+            due = now + 0.05, expires = now + 0.35}
+    elseif shortcut then
+        note("SKIP " .. (game_why or "stratagem-menu-state-unavailable"))
     end
     if overlay_pressed and not shortcut and not policy.job and not state.pending and not state.owned_start and not state.radial_failed then
         log("OVERLAY list-key pressed vk=" .. binding.start_vk)
-        local inventory, why = reader:radial(config.shared)
-        if inventory then
-            local opened; opened, why = radial:open(inventory)
-            if opened then
-                state.radial_binding, state.radial_read_due = binding, now + 0.05
-                state.highlight = nil
-                log("OVERLAY opened rows=" .. #inventory.rows)
+        if game then
+            state.open_pending = {expires = now + 0.35, binding = binding, menu_token = game.token}
+        else note("OVERLAY blocked " .. (game_why or "stratagem-menu-state-unavailable")) end
+    end
+    if state.open_pending then
+        local waiting = state.open_pending
+        if not overlay or not same_binding(binding, waiting.binding) then
+            state.open_pending = nil
+        elseif not game or game.token ~= waiting.menu_token then
+            state.open_pending = nil
+            note("OVERLAY blocked character-state-changed")
+        elseif now > waiting.expires then
+            state.open_pending = nil
+            note("OVERLAY blocked " .. (game_why or "game-stratagem-menu-not-active"))
+        elseif native_active then
+            state.open_pending = nil
+            local inventory, why = reader:radial(config.shared)
+            if inventory then
+                local opened; opened, why = radial:open(inventory)
+                if opened then
+                    state.radial_binding, state.radial_read_due = binding, now + 0.05
+                    state.radial_menu_token = game.token
+                    state.highlight = nil
+                    log("OVERLAY opened rows=" .. #inventory.rows)
+                end
             end
+            if why ~= "ready" and why ~= nil then note("OVERLAY " .. why) end
         end
-        if why ~= "ready" and why ~= nil then note("OVERLAY " .. why) end
     end
     if radial.opened then
-        if not same_binding(binding, state.radial_binding) then
+        if not game or game.token ~= state.radial_menu_token then
+            stop(); note("OVERLAY cancelled character-state-changed")
+        elseif overlay and not native_active then
+            stop(); note("OVERLAY cancelled game-stratagem-menu-closed")
+        elseif not same_binding(binding, state.radial_binding) then
             stop(); note("OVERLAY cancelled binding-changed")
         elseif now >= (state.radial_read_due or 0) then
             local current = reader:radial(config.shared)
@@ -165,12 +197,14 @@ local function tick()
             local row = radial.selected and radial.inventory.rows[radial.selected]
             radial:close()
             state.radial_binding = nil
+            state.radial_menu_token = nil
             state.highlight = nil
             if row and row.ready then
                 log("OVERLAY selected kind=" .. row.kind)
                 local request, why = reader:request_kind(row.kind, config.shared)
                 if request and clean(request) and same_binding(binding, request.bindings) then
-                    state.pending = {kind = row.kind, token = request.token, bindings = request.bindings, stage = "release",
+                    state.pending = {kind = row.kind, token = request.token, menu_token = game.token,
+                        bindings = request.bindings, stage = "release",
                         due = now + 0.03, expires = now + 0.75}
                     log("INPUT waiting-list-close kind=" .. row.kind)
                 else note("SKIP " .. (why or "direction-held-or-binding-changed")) end
@@ -190,10 +224,12 @@ local function tick()
             stop(); note(pending.stage == "release" and "SKIP list-close-timeout" or "SKIP stratagem-menu-not-active")
         elseif pending.bindings and not same_binding(binding, pending.bindings) then
             stop(); note("SKIP binding-changed")
+        elseif not game or game.token ~= pending.menu_token then
+            stop(); note("SKIP character-state-changed")
         elseif pending.stage == "release" then
             if modifier then
                 stop(); note("SKIP list-key-pressed-again")
-            elseif radial.mouse or reader:menu_active() then
+            elseif radial.mouse or native_active or reader:menu_active() then
                 pending.settled = nil
             elseif not pending.settled then
                 pending.settled = now + 0.03
@@ -210,7 +246,7 @@ local function tick()
             end
         elseif not modifier and not state.owned_start then
             stop(); note("SKIP stratagem-menu-not-active")
-        elseif reader:menu_active() then
+        elseif native_active and reader:menu_active() then
             if pending.stage == "menu" and not pending.menu_ready then
                 pending.menu_ready = now + 0.015
             elseif not pending.menu_ready or now >= pending.menu_ready then
@@ -220,6 +256,7 @@ local function tick()
                 else request, why = reader:request(pending.slot) end
                 if request and (not pending.token or pending.token == request.token) and
                     clean(request) and same_binding(binding, request.bindings) then
+                    request.menu_token = game.token
                     local started; started, why = policy:start(request, now)
                     if started then
                         log("COMMAND kind=" .. request.kind .. " steps=" .. #request.keys ..
@@ -235,7 +272,7 @@ local function tick()
         local loadout = reader:loadout()
         local request = policy.job.request
         local same = (modifier or state.owned_start ~= nil) and loadout and loadout.token == request.token and
-            same_binding(binding, request.bindings) and reader:menu_active()
+            same_binding(binding, request.bindings) and native_active and game.token == request.menu_token and reader:menu_active()
         local result, observed = policy:step(now, same)
         if observed then log(observed) end
         if result then

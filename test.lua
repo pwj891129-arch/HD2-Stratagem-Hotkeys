@@ -157,6 +157,80 @@ put(owner + 808 + 32 * (5 * 97), "\0")
 equal(reader:menu_active(), false)
 put(owner + 808 + 32 * (5 * 97), "\1")
 
+local character_owner, avatars, unit_map, avatar_map = 0x28000000, 0x29000000, 0x2a000000, 0x2a001000
+root("owner", character_owner); root("avatars", avatars)
+local function map(at, rows, key, index)
+    put(at, pointer(rows) .. word(4) .. word(0xffffffff) .. word(1))
+    put(rows, string.rep("\255", 32))
+    put(rows + (key % 4) * 8, word(key) .. word(index))
+end
+local unit, avatar, seat = 42, 123, 1
+put(players + 936, word(unit))
+map(character_owner + 15871688, unit_map, unit, 0)
+map(avatars + 248, avatar_map, avatar, seat)
+local character_identity = pointer(1) .. word(avatar) .. word(0) .. word(700) .. word(0)
+put(character_owner + 15937304, character_identity)
+put(avatars + 108, word(2))
+local avatar_id_at = avatars + 5495040 + seat * 4664 + 2948
+put(avatar_id_at, word(avatar))
+local menu_flags_at = avatars + 0x53e888 + seat * 0x1238
+put(menu_flags_at, word(0))
+equal(assert(reader:game_menu()).active, false, "physical list action alone does not activate character menu")
+put(menu_flags_at, word(512))
+local game_menu = assert(reader:game_menu())
+equal(game_menu.active, true, "actual character menu bit")
+put(menu_flags_at, word(1024))
+equal(assert(reader:game_menu()).active, false, "neighboring character bit is not menu state")
+equal(assert(reader:game_menu()).token, game_menu.token, "menu closure retains character identity")
+put(menu_flags_at, word(512 + 0x80000000))
+equal(assert(reader:game_menu()).active, true, "high flags do not hide menu bit")
+put(players + 936, word(0x7fff))
+equal(reader:game_menu(), nil, "missing local character blocks overlay")
+put(players + 936, word(unit)); put(avatar_id_at, word(avatar + 1))
+equal(reader:game_menu(), nil, "stale avatar identity blocks overlay")
+put(avatar_id_at, word(avatar)); put(avatars + 108, word(seat))
+equal(reader:game_menu(), nil, "out of range avatar seat blocked")
+put(avatars + 108, word(2)); put(avatars + 256, word(3))
+equal(reader:game_menu(), nil, "invalid map capacity blocked")
+put(avatars + 256, word(4))
+channel.read = function(self, at, size)
+    local raw = original_read(self, at, size)
+    if at == menu_flags_at then put(players + 936, word(unit + 1)) end
+    return raw
+end
+equal(reader:game_menu(), nil, "character replacement during snapshot blocked")
+channel.read = original_read; put(players + 936, word(unit))
+memory[menu_flags_at] = nil
+equal(reader:game_menu(), nil, "unreadable native menu state blocked")
+put(menu_flags_at, word(512)); put(character_owner + 15937304 + 16, word(701))
+equal(assert(reader:game_menu()).token ~= game_menu.token, true, "reused unit with new owner identity changes token")
+put(character_owner + 15937304, character_identity)
+
+local scratch_map, scratch_rows = 0x2b000000, 0x2b001000
+put(scratch_map, pointer(scratch_rows) .. word(4) .. word(0xffffffff) .. word(0xfffffffd))
+put(scratch_rows, word(0xfffffffe) .. word(17) .. word(0xffffffff) .. word(0) ..
+    word(10) .. word(2) .. word(11) .. word(3))
+equal(reader:lookup(scratch_map, 0xfffffffe), 17, "uint32 hash multiplication with collision wraps to first slot")
+equal(reader:lookup(scratch_map, 15), nil, "missing key stops at native empty sentinel")
+put(scratch_map + 8, word(256))
+put(scratch_rows, string.rep(word(42) .. word(1), 256))
+local probes = 0
+channel.read = function(self, at, size)
+    if size == 8 and at >= scratch_rows and at < scratch_rows + 2048 then probes = probes + 1 end
+    return original_read(self, at, size)
+end
+equal(reader:lookup(scratch_map, 43), nil, "malformed full map lookup is bounded")
+equal(probes, 128, "native lookup never scans unbounded map entries")
+channel.read = original_read
+local owner_index_at = unit_map + (unit % 4) * 8 + 4
+channel.read = function(self, at, size)
+    local raw = original_read(self, at, size)
+    if at == menu_flags_at then put(owner_index_at, word(1)) end
+    return raw
+end
+equal(reader:game_menu(), nil, "ownership map replacement during snapshot rejected")
+channel.read = original_read; put(owner_index_at, word(0))
+
 local clock = 0x26000000
 root("clock", clock); put(clock + 24, pointer(10000000))
 local native_definitions = assert(reader:definitions())
@@ -165,6 +239,7 @@ for index, kind in ipairs({113, 101, 66, 1}) do
 end
 local snapshot = assert(reader:radial(false))
 equal(#snapshot.rows, 4, "radial equipped slots")
+for index, row in ipairs(snapshot.rows) do equal(row.slot, index, "personal label uses equipped slot") end
 equal(snapshot.rows[1].picture, "0000000100000001", "texture hash")
 equal(snapshot.rows[1].ready, true, "native ready state")
 local row1 = local_data + 0x188
@@ -185,6 +260,19 @@ put(local_data + 0x788, word(5))
 equal(#assert(reader:radial(false)).rows, 4, "shared hidden")
 equal(#assert(reader:radial(true)).rows, 5, "shared shown")
 equal(assert(reader:loadout()).slots[4], 1, "shared does not shift equipped slots")
+equal(assert(reader:radial(true)).rows[5].slot, nil, "shared row has no personal number hotkey")
+local second = local_data + 0x188 + 48
+local second_bytes, shared_bytes = channel:read(second, 48), channel:read(extra, 48)
+put(second, shared_bytes); put(extra, second_bytes)
+local mixed = assert(reader:radial(true))
+equal(mixed.rows[2].shared, true, "shared row can occur between personal slots")
+equal(mixed.rows[2].slot, nil, "interleaved shared row is not assigned hotkey 2")
+equal(mixed.rows[3].slot, 2, "second equipped item retains number 2")
+equal(mixed.rows[5].slot, 4, "last equipped item retains number 4")
+for _, row in ipairs(mixed.rows) do
+    if row.slot then equal(assert(reader:request(row.slot)).kind, row.kind, "radial number and hotkey target match") end
+end
+put(second, second_bytes); put(extra, shared_bytes)
 put(extra + 9, "\2")
 equal(reader:loadout(), nil, "invalid shared flag blocked")
 put(local_data + 0x788, word(4))
@@ -277,6 +365,7 @@ fake.command_key = fake.key
 local fake_reader = {
     bindings = function() return binding_value, "ready" end,
     idle = function() return idle end, menu_active = function() return menu end,
+    game_menu = function() return {active = menu, token = "CHARACTER"}, "ready" end,
     command_state = function() return {start = menu, directions = {
         held[38] == true, held[39] == true, held[40] == true, held[37] == true}} end,
     loadout = function() return {token = token} end,

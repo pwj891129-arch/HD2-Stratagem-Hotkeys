@@ -2,7 +2,7 @@ local Reader = {}
 Reader.__index = Reader
 Reader.RVA = { players = 0x3326468, ui = 0x347ce28, loadouts = 0x347ce50,
     input = 0x347cf18, settings = 0x348e8f8, definitions = 0x37cb600,
-    clock = 0x3326348 }
+    clock = 0x3326348, owner = 54968216, avatars = 0x3326d20 }
 local DATA_SIZE, RECORD_SIZE, LOADOUT_DATA = 80280, 400, 0x38
 local ACTION = { [1] = 3, [2] = 2, [3] = 4, [4] = 1 }
 local ACTION_BASE = 808 + 32 * (5 * 97)
@@ -47,6 +47,56 @@ function Reader:name(at)
     end
 end
 function Reader:root(name) return self:ptr(self.channel.base + Reader.RVA[name]) end
+function Reader:lookup(at, key)
+    local header = self:read(at, 20)
+    local rows, capacity, empty, multiplier = pointer(header, 0), word(header, 8), word(header, 12), word(header, 16)
+    if not rows or not capacity or capacity < 1 or capacity > 1048576 or not empty or not multiplier then return nil end
+    local power = capacity
+    while power > 1 and power % 2 == 0 do power = power / 2 end
+    if power ~= 1 then return nil end
+    local a, b, c, d = key % 65536, math.floor(key / 65536), multiplier % 65536, math.floor(multiplier / 65536)
+    local seed = (a * c + ((a * d + b * c) % 65536) * 65536) % 4294967296
+    for probe = 0, math.min(capacity, 128) - 1 do
+        local row = self:read(rows + ((seed + probe) % capacity) * 8, 8)
+        local found = word(row, 0)
+        if not found or found == empty then return nil end
+        if found == key then return word(row, 4) end
+    end
+end
+
+function Reader:game_menu()
+    local players, owner, avatars = self:root("players"), self:root("owner"), self:root("avatars")
+    if not players or not owner or not avatars or self:word(players + 132) ~= 1 or
+        self:word(players + 136) ~= 1 then return nil, "no-local-character" end
+    local unit = self:word(players + 936)
+    if not unit or unit == 0 or unit == 0x7fff or unit == 0xffffffff then return nil, "no-local-character" end
+    local index = self:lookup(owner + 15871688, unit)
+    if not index or index > 1000000 then return nil, "character-owner-unavailable" end
+    local address = owner + 15937304 + index * 24
+    local identity = self:read(address, 24)
+    local avatar = word(identity, 8)
+    if not avatar or avatar == 0 or avatar == 0x7fff or avatar == 0xffffffff then
+        return nil, "no-local-character"
+    end
+    local seat, count = self:lookup(avatars + 248, avatar), self:word(avatars + 108)
+    if not seat or not count or seat >= count or seat > 1000000 or
+        self:word(avatars + 5495040 + seat * 4664 + 2948) ~= avatar then
+        return nil, "character-identity-mismatch"
+    end
+    -- game.dll+0xa8e780 checks this bit for the character's actual open stratagem menu.
+    local at = avatars + 0x53e888 + seat * 0x1238
+    local flags = self:word(at)
+    if not flags then return nil, "stratagem-menu-state-unreadable" end
+    if self:root("players") ~= players or self:root("owner") ~= owner or self:root("avatars") ~= avatars or
+        self:word(players + 132) ~= 1 or self:word(players + 136) ~= 1 or self:word(players + 936) ~= unit or
+        self:lookup(owner + 15871688, unit) ~= index or self:read(address, 24) ~= identity or
+        self:lookup(avatars + 248, avatar) ~= seat or self:word(avatars + 108) ~= count or
+        self:word(avatars + 5495040 + seat * 4664 + 2948) ~= avatar or self:word(at) ~= flags then
+        return nil, "character-state-changed"
+    end
+    return {active = math.floor(flags / 512) % 2 == 1,
+        token = players .. ":" .. owner .. ":" .. avatars .. ":" .. unit .. ":" .. seat .. ":" .. identity}, "ready"
+end
 
 function Reader:definitions()
     local base = self:root("settings")
@@ -188,7 +238,7 @@ function Reader:inventory(include_shared)
         seen[kind], identities[#identities + 1] = true, kind
         if shared == 0 then slots[#slots + 1] = kind end
         if shared == 0 or include_shared then
-            rows[#rows + 1] = {kind = kind, address = at, shared = shared == 1,
+            rows[#rows + 1] = {kind = kind, address = at, shared = shared == 1, slot = shared == 0 and #slots or nil,
                 uses = word(raw, 4)}
         end
     end

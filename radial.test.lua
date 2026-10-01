@@ -51,7 +51,7 @@ return function(equal, read_file, source)
         sr.Gui["destroy_" .. kind] = function(_, id) equal(shapes[id] ~= nil, true, "only own shape destroyed"); shapes[id] = nil end
     end
     local inventory = {token = "TOKEN", rows = {}}
-    for index = 1, 4 do inventory.rows[index] = {kind = index, ready = index ~= 2,
+    for index = 1, 4 do inventory.rows[index] = {kind = index, slot = index, ready = index ~= 2,
         picture = "0000000100000001", name = "ITEM", status = index == 2 and "5s" or "READY"} end
     local radial = Radial.new(sr, channel, 1, function(line) phases[#phases + 1] = line end)
     equal(radial:open(inventory), true, "radial opens")
@@ -65,6 +65,25 @@ return function(equal, read_file, source)
         if shape[1] == "bitmap" then bitmaps = bitmaps + 1 end
     end
     equal(labels, 4, "text fallback displays each equipped name")
+    local numbers = {}
+    for _, shape in pairs(shapes) do
+        if shape[1] == "text" and shape[3]:match("^%d+$") then numbers[shape[3]] = true end
+    end
+    for slot = 1, 4 do equal(numbers[tostring(slot)], true, "personal slot number rendered") end
+    local shared_inventory = {token = "TOKEN", rows = {inventory.rows[1],
+        {kind = 5, shared = true, ready = true, name = "SHARED", status = "READY"},
+        inventory.rows[2], inventory.rows[3], inventory.rows[4]}}
+    equal(radial:draw(shared_inventory), true)
+    numbers = {}
+    for _, shape in pairs(shapes) do
+        if shape[1] == "text" and shape[3]:match("^%d+$") then numbers[shape[3]] = true end
+    end
+    for slot = 1, 4 do equal(numbers[tostring(slot)], true, "interleaved shared row preserves personal number") end
+    equal(numbers["5"], nil, "shared row has no misleading number 5")
+    local numbered_before = next_id
+    inventory.rows[1].slot = nil; radial:draw(shared_inventory)
+    equal(next_id > numbered_before, true, "slot label change redraws retained GUI")
+    inventory.rows[1].slot = 1; radial:draw(inventory)
     equal(bitmaps, 0, "text fallback does not load icon materials")
     equal(show, true); equal(focus, false); equal(radial.selected, nil)
     x, y = 0.8, 0.5; equal(radial:draw(inventory), true); equal(radial.selected, 2)
@@ -123,6 +142,7 @@ return function(equal, read_file, source)
     -- Actual addon sequencing with GUI/cursor and keyboard adapters; no OS input.
     local current, held, events, ready, token, focused, idle, menu = 0, {}, {}, true, "TOKEN", true, true, true
     local menu_override, hover, acknowledge = nil, 1, true
+    local game_available, game_token, game_active_override = true, "CHARACTER", nil
     local options = {radial = true}
     local binding = {start_vk = 164, directions = {38, 39, 40, 37}}
     local fake = {base = 1, foreground = function() return focused end,
@@ -132,6 +152,12 @@ return function(equal, read_file, source)
     local request = function() if ready then return {token = token, kind = 1, keys = {38, 39},
         directions = {1, 2}, bindings = binding} end end
     local fake_reader = {bindings = function() return binding, "ready" end,
+        game_menu = function()
+            if not game_available then return nil, "no-local-character" end
+            local active = menu and held[binding.start_vk] == true
+            if game_active_override ~= nil then active = game_active_override end
+            return {active = active, token = game_token}, "ready"
+        end,
         idle = function() return idle end, menu_active = function()
             if menu_override ~= nil then return menu_override end
             return menu and held[binding.start_vk] == true
@@ -193,11 +219,11 @@ return function(equal, read_file, source)
     held[164] = true; step(0.02); token = "CHANGED"; step(0.06); held[164] = false; finish()
     equal(#events, 6, "loadout change cancels overlay")
     menu = false; held[164] = true; step(0.02); held[164] = false; step(0.02); finish(); finish()
-    equal(#events, 8, "menu timeout releases owned start without directions")
+    equal(#events, 6, "native menu unavailable never opens or injects list key")
     menu = true; idle = false; held[164] = true; step(0.02); held[164] = false; finish()
-    equal(#events, 8, "menu or chat blocks overlay")
+    equal(#events, 6, "menu or chat blocks overlay")
     idle = true; held[164], held[49] = true, true; finish()
-    equal(#events, 8, "Arsenal hotkey option off")
+    equal(#events, 6, "Arsenal hotkey option off")
     env.shutdown()
 
     -- Both paths share the list key without firing two commands or hiding shortcuts.
@@ -260,6 +286,7 @@ return function(equal, read_file, source)
         env.update, env.shutdown, env.HD2StratagemHotkeys = nil, nil, nil
         held, events, opened_count, messages = {}, {}, 0, {}
         menu_override, hover, focused, idle, menu, ready, acknowledge = nil, 1, true, true, true, true, true
+        game_available, game_token, game_active_override = true, "CHARACTER", nil
         binding = {start_vk = 164, directions = {38, 39, 40, 37}}
         init(); step(0)
     end
@@ -376,5 +403,99 @@ return function(equal, read_file, source)
     step(0.3)
     equal(#events, 0, "same keys with replaced input owner cancel queued command")
     equal(env.HD2StratagemHotkeys.pending, nil)
+    env.shutdown()
+
+    -- Raw Alt input does not prove that the character can use stratagems.
+    restart()
+    game_active_override = false
+    held[164] = true; step(0.02); finish()
+    equal(opened_count, 0, "raw list action without native character menu never opens overlay")
+    equal(#events, 0, "unavailable character menu never captures or injects input")
+    equal(env.HD2StratagemHotkeys.open_pending, nil, "native activation wait is bounded")
+    game_active_override = true; step(0.02)
+    equal(opened_count, 0, "late activation after timeout requires a fresh key press")
+    held[164] = false; step(0.02); finish()
+    equal(#events, 0, "release after blocked overlay does not confirm anything")
+    env.shutdown()
+
+    restart()
+    game_active_override = false
+    held[164] = true; step(0.02)
+    equal(opened_count, 0, "overlay waits for native menu activation")
+    step(0.10); game_active_override = true; step(0.02)
+    equal(opened_count, 1, "delayed native menu activation opens once")
+    game_active_override = nil; held[164] = false; step(0.02); finish()
+    equal(#events, 6, "normal key release after native closure still commits selected command")
+    env.shutdown()
+
+    restart()
+    game_active_override = false
+    held[164] = true; step(0.02); held[164] = false; step(0.02)
+    game_active_override = true; finish()
+    equal(opened_count, 0, "release before menu activation cancels waiting overlay")
+    equal(#events, 0)
+    env.shutdown()
+
+    restart()
+    game_available = false
+    held[164] = true; step(0.02)
+    game_available = true; finish()
+    equal(opened_count, 0, "death or spectator state cannot arm a later character while key held")
+    equal(#events, 0)
+    held[164] = false; step(0.02); env.shutdown()
+
+    restart()
+    game_active_override = false
+    held[164] = true; step(0.02)
+    game_token, game_active_override = "NEW-CHARACTER", true; step(0.02)
+    equal(opened_count, 0, "character replacement cancels native activation wait")
+    equal(env.HD2StratagemHotkeys.open_pending, nil)
+    held[164] = false; step(0.02); finish(); equal(#events, 0)
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    game_active_override = false; step(0.02)
+    equal(mock_radial.opened, false, "native menu closure while held closes overlay")
+    equal(table.concat(messages):find("game-stratagem-menu-closed", 1, true) ~= nil, true)
+    held[164] = false; step(0.02); finish(); equal(#events, 0, "forced menu closure discards selection")
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    game_available = false; held[164] = false; step(0.02); finish()
+    equal(#events, 0, "unreadable character on release never commits last highlight")
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02)
+    game_token = "NEW-CHARACTER"; held[164] = false; step(0.02); finish()
+    equal(#events, 0, "respawn identity change on key release cancels selection")
+    env.shutdown()
+
+    restart()
+    held[164] = true; step(0.02); held[164] = false; step(0.02)
+    for index = 1, 4 do step(0.02) end
+    equal(#events, 1, "reacquired list key waits for actual reopened menu")
+    game_active_override = false; finish(); finish()
+    equal(#events, 2, "raw active list alone never dispatches directions")
+    equal(events[2][1], 164); equal(events[2][2], false, "native activation timeout releases owned list key")
+    env.shutdown()
+
+    restart()
+    held[164], held[49] = true, true; step(0.02)
+    step(0.06); step(0.06)
+    equal(#events, 1, "first shortcut direction held before native closure")
+    game_active_override = false; step(0.02); finish()
+    equal(#events, 2, "native closure during command releases held direction without remaining sequence")
+    equal(events[2][1], 38); equal(events[2][2], false)
+    equal(env.HD2StratagemHotkeys.pending, nil)
+    env.shutdown()
+
+    restart()
+    game_active_override = false
+    held[164], held[49] = true, true; step(0.02); finish()
+    equal(#events, 0, "number shortcut also refuses inactive native character menu")
+    equal(opened_count, 0)
     env.shutdown()
 end

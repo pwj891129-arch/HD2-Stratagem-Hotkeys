@@ -1,4 +1,4 @@
-# HD2 Stratagem Hotkeys 0.1.7-test
+# HD2 Stratagem Hotkeys 0.1.8-test
 
 Hold your game-configured Stratagem List key, move toward a named sector, then
 release the key to enter its command. F6 and Mouse Button 4 are no longer separate
@@ -7,6 +7,38 @@ Release in the center to cancel. Aim and throw manually. The radial menu reads
 the local player's equipped stratagems, cooldowns and remaining uses.
 Unavailable or unreadable entries cannot be selected. Availability and saved
 direction bindings are checked again immediately before command input.
+
+## Native Menu Gate And Slot Numbers (0.1.8-test)
+
+Number-row 1-4 targets the player's four equipped slots, not the radial row
+index. Personal sectors now display those same slot numbers even when shared
+entries appear between them. Shared/mission sectors have no number shortcut;
+they remain selectable with the mouse when their status is ready.
+
+The overlay waits for the character's actual native stratagem menu to open,
+rather than treating a pressed List key as proof of availability. The pinned
+game's menu-open query at `game.dll+0xa8e780` resolves the avatar and tests bit 9
+at avatar manager + `0x53e888` + seat * `0x1238`. The reader follows the local
+unit/owner/avatar maps, validates identities and rereads the snapshot. It does
+not invoke the native eligibility function or guess its restrictions.
+
+A fresh key press allows at most 350 ms for native activation. No overlay or
+mouse capture is created while the native menu is inactive or unreadable.
+Character replacement, unreadable state or native menu closure while holding
+the key cancels the choice and any remaining command input. Normal key release
+still commits the last held-frame choice; dispatch waits for native closure and
+actual native reactivation. Number shortcuts also require the native open state
+before sending directions.
+
+903 LuaJIT checks pass without sending OS input, including mixed shared/personal
+slot labels, inactive native menus despite raw Alt input, delayed activation,
+bounded waits, death/respawn identity changes and cancellation during a command.
+The native field was verified against cached code from the hash-pinned game;
+state-machine and character-menu snapshots are tested with mock data. Live
+character-state gating and successful command acceptance still need user testing.
+Replace this mod with 0.1.8-test while the game is closed, then Purge / Deploy in
+Arsenal. Auto Reload 0.3.28-test stays unchanged. Installed mod files are not
+automatically changed by building or publishing this release.
 
 ## Direction Input And Game Observation
 
@@ -240,7 +272,7 @@ observation only, not successful ball preparation or a completed call.
 Run `node build.cjs`, then `./test.ps1 -LuaDll '../bin/lua51.dll'` on Windows.
 Run `node tools/package.test.cjs` to verify minimum sizes, padding, Lua-only
 archives and option includes.
-Package only `dist/HD2-Stratagem-Hotkeys-0.1.7-test/*`; never package scratch captures.
+Package only `dist/HD2-Stratagem-Hotkeys-0.1.8-test/*`; never package scratch captures.
 Building no longer reads the game's material bundles.
 The optional tools read local game references for research without changing game state.
 
